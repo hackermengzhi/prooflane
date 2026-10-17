@@ -1,0 +1,28 @@
+{
+  "title": "分页游标：编写缺陷复现测试",
+  "battleground": "reproduce",
+  "goal": "阅读 ISSUE.md 和 pager.py，为报告的问题编写 test_repro.py，只用 Python 标准库 unittest。测试必须在当前缺陷版本上失败，在修复版本上通过，并聚焦报告的问题，不要额外约束无关行为。实际运行测试并说明观察到的失败证据。不要修改 pager.py。",
+  "allow_process": true,
+  "max_steps": 30,
+  "grading": {
+    "kind": "reproduce",
+    "suite": ["$PYTHON", "-m", "unittest", "discover", "-s", ".", "-p", "test_repro.py"],
+    "target": "pager.py",
+    "reference": "reference_pager.py",
+    "defect": ["has_more = end < len(ordered)", "has_more = len(page_items) == page_size"],
+    "decoys": [
+      {
+        "id": "descending-flag-accepts-integers",
+        "replace": ["if type(descending) is not bool:", "if not isinstance(descending, (bool, int)):"]
+      },
+      {
+        "id": "descending-order-ignored",
+        "replace": ["ordered = sorted(items, reverse=descending)", "ordered = sorted(items)"]
+      },
+      {
+        "id": "page-size-limit-raised",
+        "replace": ["MAX_PAGE_SIZE = 100", "MAX_PAGE_SIZE = 200"]
+      }
+    ]
+  }
+}
