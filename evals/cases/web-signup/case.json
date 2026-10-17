@@ -1,0 +1,67 @@
+{
+  "title": "注册页面：编写浏览器测试并找出缺陷",
+  "battleground": "web",
+  "goal": "根据 requirements.md 为 app/index.html 编写浏览器自动化测试 test_web.py：使用 Python 标准库 unittest 和 Playwright 同步 API（from playwright.sync_api import sync_playwright），以 file:// 地址打开页面，覆盖全部需求及边界。运行测试，判断失败是否属于页面缺陷，把确认的缺陷写入 findings.json（JSON 列表，每项含 requirement 编号如 \"W1\" 和 summary）。不要修改 app/index.html。",
+  "allow_process": true,
+  "max_steps": 40,
+  "grading": {
+    "kind": "mutation",
+    "suite": ["$PYTHON", "-m", "unittest", "discover", "-s", ".", "-p", "test_web.py"],
+    "target": "app/index.html",
+    "reference": "reference_index.html",
+    "findings": "findings.json",
+    "seeded": ["password-digit-unchecked", "age-lower-bound-exclusive"],
+    "mutants": [
+      {
+        "id": "username-length-17",
+        "requirement": "W1",
+        "replace": ["{3,16}", "{3,17}"]
+      },
+      {
+        "id": "username-uppercase-accepted",
+        "requirement": "W1",
+        "replace": ["[a-z0-9_]", "[a-zA-Z0-9_]"]
+      },
+      {
+        "id": "username-not-trimmed",
+        "requirement": "W1",
+        "replace": ["document.getElementById(\"username\").value.trim()", "document.getElementById(\"username\").value"]
+      },
+      {
+        "id": "taken-username-accepted",
+        "requirement": "W2",
+        "replace": ["if (taken.has(form.username))", "if (false)"]
+      },
+      {
+        "id": "password-digit-unchecked",
+        "requirement": "W3",
+        "replace": [" || !/[0-9]/.test(form.password)", ""]
+      },
+      {
+        "id": "confirm-unchecked",
+        "requirement": "W4",
+        "replace": ["if (form.password !== form.confirm)", "if (false)"]
+      },
+      {
+        "id": "age-lower-bound-exclusive",
+        "requirement": "W5",
+        "replace": ["Number(form.age) < MIN_AGE", "Number(form.age) <= MIN_AGE"]
+      },
+      {
+        "id": "age-decimal-accepted",
+        "requirement": "W5",
+        "replace": ["!/^[0-9]+$/.test(form.age) || ", ""]
+      },
+      {
+        "id": "error-kept-after-success",
+        "requirement": "W7",
+        "replace": ["document.getElementById(\"error\").textContent = message;\n  if (message) return;", "if (message) {\n    document.getElementById(\"error\").textContent = message;\n    return;\n  }"]
+      },
+      {
+        "id": "submit-stays-enabled",
+        "requirement": "W7",
+        "replace": ["document.getElementById(\"submit\").disabled = true;", ""]
+      }
+    ]
+  }
+}

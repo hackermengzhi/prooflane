@@ -1,0 +1,5 @@
+[
+  {"requirement": "R1", "summary": "qty=0 被接受并返回 200"},
+  {"requirement": "R3", "summary": "小计恰好 10000 时优惠券被拒绝"},
+  {"requirement": "R5", "summary": "运费按折扣前小计判断，折后应付低于 9900 仍免运费"}
+]

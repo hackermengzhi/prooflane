@@ -1,0 +1,4 @@
+[
+  {"requirement": "W3", "summary": "不含数字的 8 位密码被接受"},
+  {"requirement": "W5", "summary": "年龄恰好 18 时被拒绝"}
+]
