@@ -14,6 +14,7 @@ EXECUTION_SOURCES = {
     "process.py",
     "artifacts.py",
     "planning.py",
+    "models.py",
     "demo/service.py",
     "demo/checkout.html",
     "demo/payment_broken.py",

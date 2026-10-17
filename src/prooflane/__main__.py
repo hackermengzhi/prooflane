@@ -2,8 +2,10 @@ import argparse
 import json
 from pathlib import Path
 
+from .agent import run_agent
 from .dispatcher import STAGES, run_task
 from .store import Store
+from .tools import ToolPolicy
 from .workflow import run_closed_loop
 
 
@@ -42,6 +44,22 @@ def main() -> int:
     run.add_argument("--output", type=Path, default=Path(".prooflane/runs"))
     run.add_argument("--no-browser", action="store_true")
     run.add_argument("--browser-channel", choices=["chrome", "msedge"])
+    agent = commands.add_parser("agent", help="General testing, coding and automation work")
+    agent.add_argument("goal")
+    agent.add_argument("--workspace", type=Path, required=True)
+    agent.add_argument(
+        "--recipe", type=Path, help="Optional reproducible tool-action recipe; otherwise uses LLM"
+    )
+    agent.add_argument("--checks", type=Path, help="Optional immutable acceptance checks JSON list")
+    agent.add_argument(
+        "--allow-process", action="store_true", help="Enable process execution in the workspace"
+    )
+    agent.add_argument(
+        "--allow-origin", action="append", default=[], help="HTTP/browser origin; repeat as needed"
+    )
+    agent.add_argument("--browser-channel", choices=["chrome", "msedge"])
+    agent.add_argument("--max-steps", type=int, default=20)
+    agent.add_argument("--output", type=Path, default=Path(".prooflane/agent-runs"))
     args = parser.parse_args()
     store = Store(args.db)
     if args.command == "init":
@@ -52,6 +70,28 @@ def main() -> int:
         print(json.dumps(store.tasks(), ensure_ascii=False, indent=2))
     elif args.command == "attach":
         print(store.attach(args.task_id, args.uri, args.description))
+    elif args.command == "agent":
+        result = run_agent(
+            store,
+            args.goal,
+            ToolPolicy(
+                args.workspace, args.allow_process, tuple(args.allow_origin), args.browser_channel
+            ),
+            args.output,
+            recipe=json.loads(args.recipe.read_text()) if args.recipe else None,
+            checks=json.loads(args.checks.read_text()) if args.checks else None,
+            max_steps=args.max_steps,
+        )
+        print(
+            json.dumps(
+                {key: result[key] for key in ["task_id", "status", "report", "error"]},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return (
+            0 if result["status"] == "completed" else 130 if result["status"] == "cancelled" else 2
+        )
     elif args.command in {"demo", "run"}:
         if args.command == "demo":
             result = run_closed_loop(

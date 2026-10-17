@@ -73,7 +73,7 @@ class PlanningTests(unittest.TestCase):
                         },
                         clear=True,
                     ),
-                    patch("prooflane.planning.build_opener", return_value=opener),
+                    patch("prooflane.models.build_opener", return_value=opener),
                 ):
                     with self.assertRaises(ValueError):
                         model_plan(self.document)

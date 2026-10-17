@@ -1,0 +1,67 @@
+{
+  "steps": [
+    {
+      "action": "call",
+      "tool": "files.list",
+      "arguments": {},
+      "reason": "检查自动化项目输入。"
+    },
+    {
+      "action": "call",
+      "tool": "files.read",
+      "arguments": {
+        "path": "requirements.md"
+      },
+      "reason": "读取业务行为和验收约束。"
+    },
+    {
+      "action": "call",
+      "tool": "files.write",
+      "arguments": {
+        "path": "automation.py",
+        "content": "\"\"\"Harvest ready plots through a configured HTTP interface.\"\"\"\nimport argparse\nimport json\nimport sys\nfrom urllib.request import Request, urlopen\n\n\ndef request(base_url, path, body=None):\n    data = None if body is None else json.dumps(body).encode()\n    headers = {\"Content-Type\": \"application/json\"}\n    with urlopen(Request(base_url.rstrip(\"/\") + path, data=data, headers=headers), timeout=3) as response:\n        return json.load(response)\n\n\ndef harvest_ready(base_url):\n    snapshot = request(base_url, \"/plots\")\n    harvested = []\n    for plot in snapshot[\"plots\"]:\n        if plot[\"state\"] != \"ready\":\n            continue\n        result = request(base_url, \"/harvest\", {\"plot_id\": plot[\"id\"], \"idempotency_key\": \"harvest:\" + plot[\"id\"]})\n        if result.get(\"harvested\") is not True:\n            raise ValueError(\"Harvest was not confirmed\")\n        harvested.append(plot[\"id\"])\n    return {\"harvested\": harvested}\n\n\ndef main():\n    parser = argparse.ArgumentParser()\n    parser.add_argument(\"--base-url\", required=True)\n    args = parser.parse_args()\n    try:\n        print(json.dumps(harvest_ready(args.base_url)))\n    except Exception as error:\n        print(json.dumps({\"error\": str(error)}), file=sys.stderr)\n        return 1\n    return 0\n\n\nif __name__ == \"__main__\":\n    raise SystemExit(main())\n"
+      },
+      "reason": "实现仅收获成熟地块、重复运行无额外收获的脚本。"
+    },
+    {
+      "action": "call",
+      "tool": "code.inspect",
+      "arguments": {
+        "path": "automation.py"
+      },
+      "reason": "在执行前检查生成脚本语法和模块结构。"
+    }
+  ],
+  "checks": [
+    {
+      "tool": "process.run",
+      "arguments": {
+        "argv": [
+          "$PYTHON",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          ".",
+          "-p",
+          "test_acceptance.py",
+          "-v"
+        ]
+      },
+      "assertions": [
+        {
+          "path": [
+            "returncode"
+          ],
+          "equals": 0
+        },
+        {
+          "path": [
+            "output"
+          ],
+          "contains": "OK"
+        }
+      ]
+    }
+  ]
+}
