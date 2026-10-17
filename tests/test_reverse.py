@@ -108,7 +108,9 @@ class ReverseTests(unittest.TestCase):
 
     def test_python_version_is_only_reported_for_known_magic(self):
         result = self.inspect(MAGIC_NUMBER + bytes(12))
-        self.assertEqual(result["python_version"], f"{sys.version_info.major}.{sys.version_info.minor}")
+        self.assertEqual(
+            result["python_version"], f"{sys.version_info.major}.{sys.version_info.minor}"
+        )
         result = self.inspect(b"\x00\x0d\r\n" + bytes(12))
         self.assertEqual(result["format"], "python-bytecode")
         self.assertNotIn("python_version", result)
@@ -116,8 +118,13 @@ class ReverseTests(unittest.TestCase):
 
     def test_malformed_headers_and_empty_files_are_unknown(self):
         samples = [
-            b"", b"\xff", b"\x00", b"\x7fELF", b"\x7fELF" + bytes(12),
-            b"\xcf\xfa\xed\xfe", b"\xca\xfe\xba\xbe",
+            b"",
+            b"\xff",
+            b"\x00",
+            b"\x7fELF",
+            b"\x7fELF" + bytes(12),
+            b"\xcf\xfa\xed\xfe",
+            b"\xca\xfe\xba\xbe",
             struct.pack(">II", 0xCAFEBABE, 0),
             struct.pack(">II", 0xCAFEBABE, 0xFFFFFFFF),
             struct.pack(">II", 0xCAFEBABE, 2) + bytes(20),
@@ -129,7 +136,9 @@ class ReverseTests(unittest.TestCase):
     def test_strings_defaults_filter_ascii_runs_and_count_all_matches(self):
         content = b"abc\0version 1.0\xffhttps://example.test\nerror\x7fxy\tend!"
         result = self.inspect(content, "artifact.strings")
-        self.assertEqual(result["strings"], ["version 1.0", "https://example.test", "error", "end!"])
+        self.assertEqual(
+            result["strings"], ["version 1.0", "https://example.test", "error", "end!"]
+        )
         self.assertEqual(result["total"], 4)
         self.assertFalse(result["limit_reached"])
         self.assertFalse(result["truncated"])
