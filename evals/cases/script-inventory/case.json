@@ -1,0 +1,20 @@
+{
+  "title": "库存同步：按需求编写自动化脚本",
+  "battleground": "script",
+  "goal": "根据 requirements.md 制作库存同步脚本 sync.py（只用 Python 标准库）。自己编写测试（例如启动本地模拟接口）验证全部需求，包括分页、重试、试运行和错误退出码，确认通过后交付。",
+  "allow_process": true,
+  "max_steps": 40,
+  "grading": {
+    "kind": "hidden",
+    "tests_file": "hidden_test.py",
+    "tests": [
+      "hidden_test.InventorySyncAcceptance.test_sync_sends_sorted_adjustments_and_reports_them",
+      "hidden_test.InventorySyncAcceptance.test_reads_every_remote_page_with_cursor",
+      "hidden_test.InventorySyncAcceptance.test_dry_run_sends_no_adjustment",
+      "hidden_test.InventorySyncAcceptance.test_invalid_csv_exits_2_without_writes",
+      "hidden_test.InventorySyncAcceptance.test_retries_503_up_to_three_attempts",
+      "hidden_test.InventorySyncAcceptance.test_persistent_503_exits_1",
+      "hidden_test.InventorySyncAcceptance.test_other_errors_are_not_retried"
+    ]
+  }
+}

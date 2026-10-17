@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<title>注册</title>
+<form id="signup" novalidate>
+  <label>用户名 <input id="username" autocomplete="off"></label>
+  <label>密码 <input id="password" type="password"></label>
+  <label>确认密码 <input id="confirm" type="password"></label>
+  <label>年龄 <input id="age"></label>
+  <button id="submit" type="submit">注册</button>
+</form>
+<p id="error" role="alert"></p>
+<p id="welcome"></p>
+<script>
+const USERNAME_PATTERN = /^[a-z0-9_]{3,16}$/;
+const MIN_PASSWORD_LENGTH = 8;
+const MIN_AGE = 18;
+const MAX_AGE = 120;
+const taken = new Set(["admin"]);
+
+function validate(form) {
+  if (!USERNAME_PATTERN.test(form.username)) return "用户名需为 3-16 位小写字母、数字或下划线";
+  if (taken.has(form.username)) return "用户名已被占用";
+  if (form.password.length < MIN_PASSWORD_LENGTH || !/[0-9]/.test(form.password)) {
+    return "密码至少 8 位且包含数字";
+  }
+  if (form.password !== form.confirm) return "两次密码不一致";
+  if (!/^[0-9]+$/.test(form.age) || Number(form.age) < MIN_AGE || Number(form.age) > MAX_AGE) {
+    return "年龄需为 18-120 的整数";
+  }
+  return "";
+}
+
+document.getElementById("signup").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const form = {
+    username: document.getElementById("username").value.trim(),
+    password: document.getElementById("password").value,
+    confirm: document.getElementById("confirm").value,
+    age: document.getElementById("age").value.trim(),
+  };
+  const message = validate(form);
+  document.getElementById("error").textContent = message;
+  if (message) return;
+  taken.add(form.username);
+  document.getElementById("welcome").textContent = `注册成功，欢迎 ${form.username}`;
+  document.getElementById("submit").disabled = true;
+});
+</script>
+</html>
