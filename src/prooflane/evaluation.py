@@ -23,6 +23,50 @@ RUNNERS = {"harness": run_harness, "agent": run_agent}
 DEFAULT_AGENT_TIMEOUT = 1800
 
 
+def compare_runs(runs: list[dict]) -> dict:
+    """Compare recorded scores, preserving missing cases and all tied winners."""
+    labels = []
+    for run in runs:
+        base = run.get("agent_command") or run["mode"]
+        label = base
+        suffix = 2
+        while label in labels:
+            label = f"{base} ({suffix})"
+            suffix += 1
+        labels.append(label)
+
+    indexed_cases = [{case["case"]: case for case in run["cases"]} for run in runs]
+    names = sorted({name for cases in indexed_cases for name in cases})
+    cases = []
+    per_case_best = {}
+    for name in names:
+        results = {}
+        for label, index in zip(labels, indexed_cases):
+            case = index.get(name)
+            results[label] = {
+                "score": case["score"] if case is not None else None,
+                "false_completion": case["false_completion"] if case is not None else None,
+            }
+        scores = {label: result["score"] for label, result in results.items()}
+        best = max(score for score in scores.values() if score is not None)
+        per_case_best[name] = [label for label, score in scores.items() if score == best]
+        cases.append({"case": name, "runs": results})
+
+    return {
+        "labels": labels,
+        "cases": cases,
+        "summary": {
+            label: {
+                "mean_score": run["mean_score"],
+                "false_completions": run["false_completions"],
+                "case_count": len(run["cases"]),
+            }
+            for label, run in zip(labels, runs)
+        },
+        "per_case_best": per_case_best,
+    }
+
+
 def prepare_workspace(case_dir: Path, grading: dict, destination: Path) -> Path:
     shutil.copytree(case_dir / "workspace", destination, ignore=COPY_IGNORE)
     if grading["kind"] in {"mutation", "reproduce"}:
