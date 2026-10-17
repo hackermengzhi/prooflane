@@ -19,6 +19,9 @@ from prooflane.models import NoRedirect
 MAX_FILE_BYTES = 200_000
 MAX_OUTPUT_BYTES = 512_000
 IGNORED_DIRECTORIES = {".git", ".venv", "node_modules", "__pycache__", ".prooflane"}
+FILE_CHANGING_TOOLS = {"files.write", "files.edit"}
+# Tools that may alter the workspace or a target system, so acceptance must exist first.
+STATE_CHANGING_TOOLS = FILE_CHANGING_TOOLS | {"process.run", "http.request", "browser.run"}
 
 
 @dataclass(frozen=True)
@@ -55,6 +58,7 @@ class Tools:
             "files.list": self.list_files,
             "files.read": self.read_file,
             "files.write": self.write_file,
+            "files.edit": self.edit_file,
             "code.inspect": self.inspect_code,
             "process.run": self.run_process,
             "http.request": self.http_request,
@@ -66,6 +70,13 @@ class Tools:
             "files.list": {"arguments": {"path": "relative directory, default ."}},
             "files.read": {"arguments": {"path": "relative UTF-8 file"}},
             "files.write": {"arguments": {"path": "relative file", "content": "UTF-8 text"}},
+            "files.edit": {
+                "arguments": {
+                    "path": "relative existing file",
+                    "old": "exact text occurring exactly once",
+                    "new": "replacement text",
+                }
+            },
             "code.inspect": {
                 "arguments": {"path": "Python file; returns AST symbols/imports/syntax"}
             },
@@ -170,6 +181,15 @@ class Tools:
         target.write_text(content, encoding="utf-8")
         (directory / "written.txt").write_text(content, encoding="utf-8")
         return {"path": path, "before_sha256": previous, "sha256": digest(target)}
+
+    def edit_file(self, directory: Path, path: str, old: str, new: str) -> dict:
+        if not isinstance(old, str) or not old or not isinstance(new, str):
+            raise ValueError("Edit requires nonempty old text and new text")
+        content = self.read_file(directory, path)["content"]
+        occurrences = content.count(old)
+        if occurrences != 1:
+            raise ValueError(f"Old text must occur exactly once; found {occurrences}")
+        return self.write_file(directory, path, content.replace(old, new))
 
     def inspect_code(self, directory: Path, path: str) -> dict:
         source = self.read_file(directory, path)

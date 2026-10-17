@@ -13,15 +13,23 @@ from prooflane.agent import (
 from prooflane.artifacts import manifest, write_json
 from prooflane.models import ModelOutputError, request_json
 from prooflane.store import Store
-from prooflane.tools import ToolPolicy, Tools
+from prooflane.tools import STATE_CHANGING_TOOLS, ToolPolicy, Tools
 
 ROLE_TOOLS = {
     "product": {"files.list", "files.read", "code.inspect"},
-    "developer": {"files.list", "files.read", "files.write", "code.inspect", "process.run"},
+    "developer": {
+        "files.list",
+        "files.read",
+        "files.write",
+        "files.edit",
+        "code.inspect",
+        "process.run",
+    },
     "tester": {
         "files.list",
         "files.read",
         "files.write",
+        "files.edit",
         "code.inspect",
         "process.run",
         "http.request",
@@ -61,7 +69,7 @@ ROLE_GUIDES = {
     ),
     "developer": (
         "Developer actions: call(tool,arguments), report(message), blocked. Inspect before editing "
-        "and rewrite whole files deliberately. Prefer the Python standard library. Implement every "
+        "and use files.edit for focused changes and files.write for new files or full rewrites. Prefer the Python standard library. Implement every "
         "numbered requirement exactly: exit codes, output formats, ordering, pagination, retries, "
         "idempotency keys, timeouts and error paths. Run your code before reporting. Report what "
         "changed and what you ran, with real results."
@@ -91,15 +99,24 @@ class RoleTools(Tools):
         if role == "tester":
             self.created = set()
             self.handlers["files.write"] = self.write_own_file
+            self.handlers["files.edit"] = self.edit_own_file
 
-    def write_own_file(self, directory, path, content):
+    def check_own_file(self, path):
         # Testers add test assets and reports but never alter the code they are verifying.
         target = self.path(path)
         if target.exists() and target not in self.created:
             raise ValueError("Tester may only create new files or edit files it created")
+        return target
+
+    def write_own_file(self, directory, path, content):
+        target = self.check_own_file(path)
         result = self.write_file(directory, path, content)
         self.created.add(target)
         return result
+
+    def edit_own_file(self, directory, path, old, new):
+        self.check_own_file(path)
+        return self.edit_file(directory, path, old, new)
 
     def catalog(self):
         return {name: item for name, item in super().catalog().items() if name in self.handlers}
@@ -196,10 +213,7 @@ def run_harness(
                     tool = decision.get("tool")
                     if tool not in tools[active].handlers:
                         raise ActionRejected(f"Tool not available to {active}: {tool}")
-                    if (
-                        tool in {"files.write", "process.run", "http.request", "browser.run"}
-                        and accepted is None
-                    ):
+                    if tool in STATE_CHANGING_TOOLS and accepted is None:
                         raise ActionRejected(
                             "Define acceptance before potentially state-changing actions"
                         )
