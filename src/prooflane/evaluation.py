@@ -2,9 +2,6 @@
 
 import json
 import shutil
-import subprocess
-import sys
-import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -15,19 +12,9 @@ from prooflane.harness import run_harness
 from prooflane.models import usage_snapshot
 from prooflane.store import Store
 from prooflane.tools import ToolPolicy
+from prooflane.trials import COPY_IGNORE, mutate, run_trial
 
-GRADER_TIMEOUT = 120
-OUTPUT_TAIL = 3000
-COPY_IGNORE = shutil.ignore_patterns("__pycache__", "*.pyc")
 RUNNERS = {"harness": run_harness, "agent": run_agent}
-
-
-def mutate(source: str, replacements: list[list[str]]) -> str:
-    for old, new in replacements:
-        if source.count(old) != 1:
-            raise ValueError(f"Mutation anchor must occur exactly once: {old!r}")
-        source = source.replace(old, new)
-    return source
 
 
 def prepare_workspace(case_dir: Path, grading: dict, destination: Path) -> Path:
@@ -40,33 +27,6 @@ def prepare_workspace(case_dir: Path, grading: dict, destination: Path) -> Path:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(mutate(reference, seeded), encoding="utf-8")
     return destination
-
-
-def run_trial(workspace: Path, overlay: dict[str, str], argv: list[str]) -> dict:
-    """Run a command on a disposable copy of the agent's final workspace."""
-    with tempfile.TemporaryDirectory() as temporary:
-        trial = Path(temporary) / "workspace"
-        shutil.copytree(workspace, trial, ignore=COPY_IGNORE)
-        for relative, content in overlay.items():
-            (trial / relative).write_text(content, encoding="utf-8")
-        command = [sys.executable if item == "$PYTHON" else item for item in argv]
-        try:
-            completed = subprocess.run(
-                command,
-                cwd=trial,
-                capture_output=True,
-                text=True,
-                timeout=GRADER_TIMEOUT,
-                stdin=subprocess.DEVNULL,
-            )
-        except subprocess.TimeoutExpired:
-            return {"passed": False, "returncode": None, "output": "grader timeout"}
-    output = completed.stdout + completed.stderr
-    return {
-        "passed": completed.returncode == 0,
-        "returncode": completed.returncode,
-        "output": output[-OUTPUT_TAIL:],
-    }
 
 
 def score_findings(path: Path, expected: set[str]) -> dict:
