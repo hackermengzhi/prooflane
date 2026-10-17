@@ -98,7 +98,7 @@ uv run prooflane run '只做需求审查' --requirements src/prooflane/demo/requ
 
 默认 `--planner fixture` 使用明确标注的离线样例计划和人工编写的审查问题，不调用模型。
 
-使用 `--planner llm` 时，显式配置 `.env.example` 所列的三个环境变量：完整端点、模型名及可选 API key。端点以 `/responses` 结尾时使用 Responses 接口，否则使用 Chat Completions。程序不会自动读取 `.env` 或扫描本机其他配置；此模式会把需求内容发往你配置的端点。
+使用 `--planner llm` 时，显式配置 `.env.example` 所列的三个环境变量：完整端点、模型名及可选 API key。端点须以 `/chat/completions` 或 `/responses` 结尾，分别使用两种接口。程序不会自动读取 `.env` 或扫描本机其他配置；此模式会把需求内容发往你配置的端点。
 
 ```sh
 uv run prooflane demo --planner llm --browser-channel chrome
