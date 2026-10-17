@@ -1,0 +1,87 @@
+{
+  "title": "登录与会话接口：编写安全测试并找出缺陷",
+  "battleground": "api",
+  "goal": "根据 requirements.md 为 service.py 编写接口自动化测试 test_api.py：只用 Python 标准库 unittest，测试内自行调用 create_server 启动和关闭服务，覆盖全部需求及边界，通过注入时钟验证过期，不要长时间 sleep。运行测试，判断失败是否属于被测服务缺陷，把确认的缺陷写入 findings.json（JSON 列表，每项含 requirement 编号如 \"S1\" 和 summary）。不要修改 service.py。",
+  "allow_process": true,
+  "max_steps": 40,
+  "grading": {
+    "kind": "mutation",
+    "suite": ["$PYTHON", "-m", "unittest", "discover", "-s", ".", "-p", "test_api.py"],
+    "target": "service.py",
+    "reference": "reference_service.py",
+    "findings": "findings.json",
+    "seeded": ["unknown-user-disclosed", "expiry-boundary-inclusive", "logout-keeps-token"],
+    "mutants": [
+      {
+        "id": "unknown-user-disclosed",
+        "requirement": "S1",
+        "replace": ["if user not in USERS:\n            self.respond(401, {\"error\": \"invalid credentials\"})", "if user not in USERS:\n            self.respond(401, {\"error\": \"unknown user\"})"]
+      },
+      {
+        "id": "wrong-password-accepted",
+        "requirement": "S1",
+        "replace": ["elif password != USERS[user]:", "elif False:"]
+      },
+      {
+        "id": "predictable-token",
+        "requirement": "S1",
+        "replace": ["token = secrets.token_urlsafe(32)", "token = user"]
+      },
+      {
+        "id": "lock-one-attempt-early",
+        "requirement": "S2",
+        "replace": ["failures >= MAX_FAILURES", "failures >= MAX_FAILURES - 1"]
+      },
+      {
+        "id": "lock-one-attempt-late",
+        "requirement": "S2",
+        "replace": ["failures >= MAX_FAILURES", "failures > MAX_FAILURES"]
+      },
+      {
+        "id": "login-keeps-failure-count",
+        "requirement": "S2",
+        "replace": ["self.server.failures[user] = 0", "self.server.failures[user] = failures"]
+      },
+      {
+        "id": "me-allows-unauthorized",
+        "requirement": "S3",
+        "replace": ["if token is None:\n                self.respond(401, {\"error\": \"unauthorized\"})", "if token is None:\n                self.respond(200, {\"user\": \"alice\"})"]
+      },
+      {
+        "id": "bearer-prefix-unchecked",
+        "requirement": "S3",
+        "replace": ["if not authorization.startswith(\"Bearer \"):", "if not authorization:"]
+      },
+      {
+        "id": "expiry-boundary-inclusive",
+        "requirement": "S4",
+        "replace": ["self.server.clock() >= session[\"expires_at\"]", "self.server.clock() > session[\"expires_at\"]"]
+      },
+      {
+        "id": "token-lifetime-doubled",
+        "requirement": "S4",
+        "replace": ["self.server.clock() + TOKEN_LIFETIME", "self.server.clock() + 2 * TOKEN_LIFETIME"]
+      },
+      {
+        "id": "logout-keeps-token",
+        "requirement": "S5",
+        "replace": ["self.server.sessions.pop(token)", "self.server.sessions.get(token)"]
+      },
+      {
+        "id": "logout-clears-all-tokens",
+        "requirement": "S5",
+        "replace": ["self.server.sessions.pop(token)", "self.server.sessions.clear()"]
+      },
+      {
+        "id": "failed-login-echoes-password",
+        "requirement": "S6",
+        "replace": ["self.server.failures[user] = failures + 1\n            self.respond(401, {\"error\": \"invalid credentials\"})", "self.server.failures[user] = failures + 1\n            self.respond(401, {\"error\": \"invalid credentials\", \"password\": password})"]
+      },
+      {
+        "id": "login-logs-password",
+        "requirement": "S6",
+        "replace": ["password = body.get(\"password\")", "password = body.get(\"password\")\n        print(password)"]
+      }
+    ]
+  }
+}
