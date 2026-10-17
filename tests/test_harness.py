@@ -87,8 +87,25 @@ class HarnessTests(unittest.TestCase):
             tester = RoleTools(policy, root / "test-evidence", "tester")
             developer = RoleTools(policy, root / "dev-evidence", "developer")
             self.assertNotIn("process.run", product.catalog())
-            self.assertNotIn("files.write", tester.catalog())
+            self.assertNotIn("files.write", product.catalog())
             self.assertIn("files.write", developer.catalog())
+            self.assertNotIn("browser.run", developer.catalog())
+            self.assertIn("browser.run", tester.catalog())
             self.assertEqual(
-                tester.call("files.write", {"path": "bad", "content": "bad"})["status"], "blocked"
+                product.call("files.write", {"path": "bad", "content": "bad"})["status"], "blocked"
             )
+
+    def test_tester_writes_own_test_assets_but_not_code_under_test(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "service.py").write_text("VALUE = 1\n")
+            tester = RoleTools(ToolPolicy(root), root / "evidence", "tester")
+
+            def write(path, content):
+                return tester.call("files.write", {"path": path, "content": content})["status"]
+
+            self.assertEqual(write("test_service.py", "draft"), "succeeded")
+            self.assertEqual(write("test_service.py", "revised"), "succeeded")
+            self.assertEqual(write("service.py", "VALUE = 2\n"), "blocked")
+            self.assertEqual((root / "service.py").read_text(), "VALUE = 1\n")
+            self.assertEqual((root / "test_service.py").read_text(), "revised")

@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 280" width="260" height="280" role="img" aria-labelledby="title desc">
+  <title id="title">鸮鸮</title>
+  <desc id="desc">万测王的吉祥物：一只圆滚滚的小猫头鹰，大眼睛像两面放大镜，胸前羽毛上有一个对勾。</desc>
+  <defs>
+    <radialGradient id="body" cx="0.5" cy="0.35" r="0.75">
+      <stop offset="0" stop-color="#8C7BF0"/>
+      <stop offset="1" stop-color="#5A47C9"/>
+    </radialGradient>
+    <radialGradient id="belly" cx="0.5" cy="0.3" r="0.8">
+      <stop offset="0" stop-color="#FFF8EC"/>
+      <stop offset="1" stop-color="#F3E3C8"/>
+    </radialGradient>
+    <radialGradient id="iris" cx="0.4" cy="0.35" r="0.7">
+      <stop offset="0" stop-color="#FFE08A"/>
+      <stop offset="1" stop-color="#F5A524"/>
+    </radialGradient>
+  </defs>
+  <!-- perch and shadow -->
+  <rect x="40" y="246" width="180" height="12" rx="6" fill="#8A5A3B"/>
+  <ellipse cx="130" cy="270" rx="78" ry="6" fill="#000" opacity="0.10"/>
+  <!-- ear tufts -->
+  <path d="M66 70 L58 28 L98 52 Z" fill="#4A39B0"/>
+  <path d="M194 70 L202 28 L162 52 Z" fill="#4A39B0"/>
+  <!-- body -->
+  <path d="M130 40 C68 40 46 88 48 138 C50 200 86 248 130 248 C174 248 210 200 212 138 C214 88 192 40 130 40 Z" fill="url(#body)"/>
+  <!-- wings -->
+  <path d="M52 132 C30 160 36 206 66 226 C70 196 70 160 52 132 Z" fill="#4A39B0"/>
+  <path d="M208 132 C230 160 224 206 194 226 C190 196 190 160 208 132 Z" fill="#4A39B0"/>
+  <!-- belly with feather scallops and check mark -->
+  <path d="M130 128 C92 128 80 168 84 196 C88 228 108 242 130 242 C152 242 172 228 176 196 C180 168 168 128 130 128 Z" fill="url(#belly)"/>
+  <path d="M104 168 q6 6 12 0 M126 168 q6 6 12 0 M148 168 q6 6 12 0 M115 186 q6 6 12 0 M137 186 q6 6 12 0" fill="none" stroke="#E2CBA6" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="130" cy="214" r="14" fill="#22A06B"/>
+  <path d="M123 214 L128 219 L138 208" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- eye discs -->
+  <circle cx="98" cy="98" r="34" fill="#FFF8EC"/>
+  <circle cx="162" cy="98" r="34" fill="#FFF8EC"/>
+  <!-- lens rims: the eyes double as magnifying glasses -->
+  <circle cx="98" cy="98" r="34" fill="none" stroke="#2E2A4F" stroke-width="5"/>
+  <circle cx="162" cy="98" r="34" fill="none" stroke="#2E2A4F" stroke-width="5"/>
+  <!-- irises, pupils and highlights -->
+  <circle cx="100" cy="100" r="20" fill="url(#iris)"/>
+  <circle cx="160" cy="100" r="20" fill="url(#iris)"/>
+  <circle cx="102" cy="101" r="11" fill="#1F1B33"/>
+  <circle cx="158" cy="101" r="11" fill="#1F1B33"/>
+  <circle cx="107" cy="95" r="4.5" fill="#fff"/>
+  <circle cx="163" cy="95" r="4.5" fill="#fff"/>
+  <circle cx="98" cy="106" r="2" fill="#fff" opacity="0.8"/>
+  <circle cx="154" cy="106" r="2" fill="#fff" opacity="0.8"/>
+  <path d="M76 82 C80 72 88 68 96 67" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" opacity="0.9"/>
+  <path d="M140 82 C144 72 152 68 160 67" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" opacity="0.9"/>
+  <!-- brows -->
+  <path d="M70 60 Q98 48 122 66" fill="none" stroke="#3B2C99" stroke-width="6" stroke-linecap="round"/>
+  <path d="M190 60 Q162 48 138 66" fill="none" stroke="#3B2C99" stroke-width="6" stroke-linecap="round"/>
+  <!-- beak -->
+  <path d="M121 124 Q130 118 139 124 L130 142 Z" fill="#F5A524" stroke="#D9861A" stroke-width="2" stroke-linejoin="round"/>
+  <!-- cheeks -->
+  <ellipse cx="72" cy="134" rx="9" ry="6" fill="#FF8FA3" opacity="0.55"/>
+  <ellipse cx="188" cy="134" rx="9" ry="6" fill="#FF8FA3" opacity="0.55"/>
+  <!-- feet gripping the perch -->
+  <path d="M108 244 l-6 10 M114 244 l0 11 M120 244 l6 10" stroke="#F5A524" stroke-width="5" stroke-linecap="round"/>
+  <path d="M140 244 l-6 10 M146 244 l0 11 M152 244 l6 10" stroke="#F5A524" stroke-width="5" stroke-linecap="round"/>
+</svg>
