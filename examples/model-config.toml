@@ -1,0 +1,17 @@
+# Model provider configuration for Prooflane. Select it explicitly:
+#   PROOFLANE_CONFIG=examples/model-config.toml MY_PROVIDER_KEY=... uv run prooflane models
+# API keys never live in this file; env_key names the environment variable that holds the key.
+
+model = "gpt-5.5"
+model_provider = "openai"
+# Optional: none, minimal, low, medium, high, xhigh or max, as supported by the model.
+reasoning_effort = "medium"
+
+[model_providers.openai]
+base_url = "https://api.openai.com/v1"
+# "responses" for the Responses API, "chat" for Chat Completions.
+wire_api = "responses"
+env_key = "MY_PROVIDER_KEY"
+# Optional: seconds per request (default 180) and retries for 429/5xx/timeouts (default 4).
+timeout = 180
+max_retries = 4

@@ -6,6 +6,7 @@ from .agent import run_agent
 from .dispatcher import STAGES, run_task
 from .evaluation import run_evaluation
 from .harness import run_harness
+from .models import list_models
 from .store import Store
 from .tools import ToolPolicy
 from .workflow import run_closed_loop
@@ -17,6 +18,7 @@ def main() -> int:
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("init")
     commands.add_parser("list")
+    commands.add_parser("models", help="List models offered by the configured provider")
     create = commands.add_parser("create")
     create.add_argument("title")
     attach = commands.add_parser("attach")
@@ -87,6 +89,8 @@ def main() -> int:
         print(json.dumps({"database": args.db}))
     elif args.command == "create":
         print(store.create(args.title))
+    elif args.command == "models":
+        print(json.dumps(list_models(), indent=2))
     elif args.command == "list":
         print(json.dumps(store.tasks(), ensure_ascii=False, indent=2))
     elif args.command == "attach":
