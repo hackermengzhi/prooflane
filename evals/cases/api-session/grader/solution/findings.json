@@ -1,0 +1,5 @@
+[
+  {"requirement": "S1", "summary": "未知用户返回 unknown user，已知用户密码错误返回 invalid credentials，可枚举用户"},
+  {"requirement": "S4", "summary": "令牌签发后恰好 60 秒仍可访问 /me 和登出，过期边界错误"},
+  {"requirement": "S5", "summary": "登出返回成功但未删除当前令牌，随后仍可访问 /me 并重复登出"}
+]
