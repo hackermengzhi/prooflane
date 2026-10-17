@@ -15,6 +15,7 @@ from urllib.request import Request, build_opener
 
 from prooflane.artifacts import digest, write_json
 from prooflane.debugging import capabilities, run_debugger
+from prooflane.flaky import check_flaky
 from prooflane.models import NoRedirect
 from prooflane.reverse import identify_artifact, inspect_strings
 from prooflane.selfcheck import check_mutations
@@ -80,6 +81,7 @@ class Tools:
             "artifact.strings": self.inspect_strings,
             "process.run": self.run_process,
             "quality.mutate": self.check_mutations,
+            "quality.flaky": self.check_flaky,
             "http.request": self.http_request,
             "browser.run": self.run_browser,
         }
@@ -142,6 +144,14 @@ class Tools:
                     "target": "workspace-relative UTF-8 source file",
                     "suite": "nonempty argv list; $PYTHON means current interpreter",
                     "mutants": "at most 30 items: {id: unique string, replace: [old, new]}",
+                    "timeout": "per-run 1..60 seconds, default 15",
+                },
+            },
+            "quality.flaky": {
+                "enabled": self.policy.allow_process,
+                "arguments": {
+                    "suite": "nonempty argv list; $PYTHON means current interpreter",
+                    "runs": "integer 2..20, default 5",
                     "timeout": "per-run 1..60 seconds, default 15",
                 },
             },
@@ -352,6 +362,19 @@ class Tools:
         check_timeout(timeout)
         source = self.read_file(directory, target)["content"]
         relative = str(self.path(target).relative_to(self.workspace))
+        self.check_trial_workspace()
+        return check_mutations(self.workspace, relative, source, suite, mutants, timeout)
+
+    def check_flaky(
+        self, directory: Path, suite: list[str], runs: int = 5, timeout: int = 15
+    ) -> dict:
+        if not self.policy.allow_process:
+            raise ValueError("Process capability is disabled for this task")
+        check_timeout(timeout)
+        self.check_trial_workspace()
+        return check_flaky(self.workspace, suite, runs, timeout)
+
+    def check_trial_workspace(self) -> None:
         # copytree follows symlinks, which can read outside or change mutation semantics.
         for current, directories, names in os.walk(self.workspace, followlinks=False):
             for name in directories + names:
@@ -359,7 +382,6 @@ class Tools:
                 if candidate.is_symlink():
                     self.path(str(candidate.relative_to(self.workspace)))
                     raise ValueError("Trial workspace must not contain symlinks")
-        return check_mutations(self.workspace, relative, source, suite, mutants, timeout)
 
     def http_request(
         self, directory: Path, url: str, method: str = "GET", body: dict | None = None
