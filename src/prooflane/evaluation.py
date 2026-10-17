@@ -12,6 +12,7 @@ from pathlib import Path
 from prooflane.agent import run_agent
 from prooflane.artifacts import write_json
 from prooflane.harness import run_harness
+from prooflane.models import usage_snapshot
 from prooflane.store import Store
 from prooflane.tools import ToolPolicy
 
@@ -157,6 +158,7 @@ def run_case(case_dir: Path, store: Store, output: Path, *, mode: str, reference
         "status": run["status"],
         "error": run["error"],
         "steps": len(run["steps"]),
+        "usage": run.get("usage"),
         "seconds": round(time.monotonic() - started, 1),
         "report": run["report"],
         "score": grade["score"],
@@ -191,6 +193,10 @@ def run_evaluation(
         "directory": str(directory),
         "mean_score": sum(item["score"] for item in results) / len(results),
         "false_completions": sum(item["false_completion"] for item in results),
+        "usage": {
+            key: sum((item["usage"] or {}).get(key, 0) for item in results)
+            for key in usage_snapshot()
+        },
         "cases": results,
     }
     write_json(directory / "evaluation.json", summary)

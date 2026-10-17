@@ -20,6 +20,23 @@ MAX_BACKOFF_SECONDS = 60
 MAX_RESPONSE_BYTES = 1024 * 1024
 
 
+# Provider usage fields per wire protocol, mapped onto one accounting vocabulary.
+USAGE_FIELDS = {
+    "chat": {"input_tokens": "prompt_tokens", "output_tokens": "completion_tokens"},
+    "responses": {"input_tokens": "input_tokens", "output_tokens": "output_tokens"},
+}
+# Process-wide totals; callers measure a run by comparing snapshots taken before and after.
+USAGE = {"requests": 0, "input_tokens": 0, "output_tokens": 0}
+
+
+def usage_snapshot() -> dict:
+    return dict(USAGE)
+
+
+def usage_since(before: dict) -> dict:
+    return {key: USAGE[key] - before[key] for key in USAGE}
+
+
 class ModelOutputError(ValueError):
     """The provider answered, but not with a complete JSON object the caller can act on."""
 
@@ -199,6 +216,11 @@ def request_json(system_prompt: str, payload: dict) -> tuple[dict, str]:
     settings = load_settings()
     body = request_body(settings, system_prompt, json.dumps(payload, ensure_ascii=False))
     result = send(settings, settings.endpoint, body)
+    USAGE["requests"] += 1
+    reported = result.get("usage") if isinstance(result, dict) else None
+    for name, field in USAGE_FIELDS[settings.wire_api].items():
+        value = reported.get(field) if isinstance(reported, dict) else None
+        USAGE[name] += value if type(value) is int else 0
     try:
         text = responses_text(result) if settings.wire_api == "responses" else chat_text(result)
         plan = json.loads(text)
