@@ -111,15 +111,16 @@ class SelfcheckTests(unittest.TestCase):
         self.assertIn("tail-marker", mutant["output"])
 
     def test_real_timeout_is_separate_from_killed_and_counts_in_denominator(self):
+        # Generous margin so a loaded machine cannot turn the fast kill into a timeout.
         result = self.check(
-            timeout=1,
+            timeout=3,
             mutants=[
                 self.mutants[0],
                 {
                     "id": "slow",
                     "replace": [
                         "return value * 2",
-                        "__import__('time').sleep(5); return value * 2",
+                        "__import__('time').sleep(30); return value * 2",
                     ],
                 },
             ],
