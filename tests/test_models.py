@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 from urllib.error import HTTPError
 
-from prooflane.models import list_models, load_settings, request_json
+from prooflane.models import list_models, load_settings, request_json, usage_since, usage_snapshot
 
 RESPONSES_URL = "http://127.0.0.1:12345/v1/responses"
 CONFIG = """
@@ -91,6 +91,21 @@ class ModelTransportTests(unittest.TestCase):
         self.assertEqual(body["text"], {"format": {"type": "json_object"}})
         self.assertIs(body["store"], False)
         self.assertNotIn("messages", body)
+
+    def test_usage_is_accounted_for_both_protocols(self):
+        before = usage_snapshot()
+        completed = {**COMPLETED, "usage": {"input_tokens": 120, "output_tokens": 30}}
+        self.call(self.environment(), [reply(completed)])
+        chat = {
+            "choices": [{"finish_reason": "stop", "message": {"content": "{}"}}],
+            "usage": {"prompt_tokens": 50, "completion_tokens": 5},
+        }
+        chat_url = "http://127.0.0.1:12345/v1/chat/completions"
+        self.call(self.environment(PROOFLANE_LLM_URL=chat_url), [reply(chat)])
+        self.call(self.environment(), [reply(COMPLETED)])
+        self.assertEqual(
+            usage_since(before), {"requests": 3, "input_tokens": 170, "output_tokens": 35}
+        )
 
     def test_truncated_or_refused_responses_are_rejected(self):
         for result in [

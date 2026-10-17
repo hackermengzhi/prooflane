@@ -113,6 +113,7 @@ def main() -> int:
                 {
                     "mean_score": summary["mean_score"],
                     "false_completions": summary["false_completions"],
+                    "usage": summary["usage"],
                     "cases": rows,
                     "details": str(Path(summary["directory"]) / "evaluation.json"),
                 },
