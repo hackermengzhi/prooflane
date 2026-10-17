@@ -1,139 +1,147 @@
-# Prooflane
+<p align="center">
+  <img src="docs/assets/mascot.svg" width="200" alt="万测王吉祥物：举着放大镜的小猫头鹰鸮鸮">
+</p>
 
-面向软件测试、代码任务与自动化制作的通用 Agent，保留可检查的执行与验收证据。
+<h1 align="center">万测王 · Prooflane</h1>
 
-**需求 → 验收场景 → 执行证据 → 缺陷记录 → 修复版本 → 回归结果**
+<p align="center"><strong>会写测试、会写脚本，而且每句结论都拿得出证据的 Agent。</strong></p>
 
-## 角色协作 Harness
+<p align="center">需求 → 验收 → 执行证据 → 缺陷 → 修复 → 回归</p>
 
-新增 `prooflane harness`：领导负责委派和查收，产品制定验收，开发实施，测试独立执行验证。每个角色拥有自己的工具目录和任务；可以按需要往返协作，领导不能跳过实际测试交付。详见 [Harness 分工与当前边界](docs/harness.md)。
+---
 
-```sh
-uv run prooflane harness '分析需求并制作自动化，测试验证后交付' --workspace YOUR_PROJECT --allow-process
-```
+万测王是一个面向**软件测试**和**自动化脚本制作**的 Agent。它读需求、设计用例、写测试和脚本、真实运行、分辨失败原因，最后交出一份能逐条核对的报告。
 
-当前串行角色协作已通过契约桩配合实际工具验证；真实模型表现、系统级隔离和中断恢复尚未验收。
+它的信条只有一句：**没有执行证据，就不算完成。** Agent 不能自己宣布成功，必须由独立的验收实际跑过；评测时，连分数都由它看不到的评分器给出。
 
-## 评测集
+吉祥物是一只叫**鸮鸮**的小猫头鹰。猫头鹰夜里也看得清，眼睛最尖，鸮鸮拿着放大镜盯着每一个细节，替发布把关。
 
-`prooflane eval` 在三个预置用例（HTTP 接口、浏览器页面、自动化脚本）上运行 harness，结束后由 Agent 看不到的评分器打分：变异测试衡量 Agent 写的测试能否发现缺陷且不误报，隐藏验收测试衡量脚本是否满足需求，并统计“报告完成但评分不满分”的虚假完成。`--reference` 用内置参考答案验证用例本身。详见 [评测集说明](docs/evaluation.md)。
+## 它能做什么
 
-```sh
-uv run prooflane eval --reference
-```
-
-## 通用测试与自动化入口
-
-`prooflane agent` 不依赖支付场景目录：模型根据目标调用文件读写、Python 代码结构分析、进程、HTTP 和浏览器工具，观察结果后继续行动。提出完成时必须实际运行验收；验收失败会回到模型继续处理。模型调用需要显式配置下文的端点环境变量。
-
-```sh
-uv run prooflane agent '读取需求，制作自动化脚本并运行现有验收，不修改验收文件' --workspace YOUR_PROJECT --allow-process
-```
-
-可使用 `--checks checks.json` 提供事先确定的验收，或由模型在修改前提出验收。报告明确标注验收来源；模型自拟验收不能视为独立质量保证。验收定义确立后不可替换，但运行的测试文件仍位于可写工作区，不具备防恶意修改隔离。
-
-无需模型的非支付样例：
-
-```sh
-uv run prooflane agent '制作农场收获自动化并验证重复运行' --workspace examples/farm-automation --recipe examples/farm-automation/recipe.json --allow-process
-```
-
-该配方实际写入脚本，运行本地 HTTP 农场接口的三项独立验收，检查成熟地块选择、重复运行和接口失败。配方中的代码为预写模板，不宣称由模型现场生成。[农场自动化说明](examples/farm-automation/README.md)。没有使用真实桃源账号或游戏协议。
-
-工具能力：
-
-- 文件：列出、读取、写入并备份覆盖前内容；路径限制在指定工作区。
-- 代码：Python AST 符号、导入与语法检查。
-- 进程：需 `--allow-process`；实际运行、记录退出码和输出，限制时间与输出大小，清理进程组。
-- HTTP 与浏览器：通过重复 `--allow-origin URL` 显式配置目标；浏览器支持定位、点击、输入、文本断言和截图。
-- 任务：逐步记录调用及观察，模型上下文使用最近记录和有界片段，完整证据保留在磁盘。
-
-进程运行于当前用户权限下，不是系统沙箱，能访问文件系统和网络；工作区路径与网络来源限制仅作用于对应的文件/HTTP/浏览器工具。报告和进程输出可能包含项目数据，应留在本地。尚未提供 OCR、桌面输入、通用 RAG、独立多 Agent 并行和真实桃源协议适配。真实模型推理质量尚未验收；模型动作循环使用契约桩配合真实工具验证。
-
-## 当前可运行的业务闭环
-
-第一条业务链为本地下单支付演示：导入七条需求、生成十个受控场景，启动原版服务，执行接口和浏览器测试，关联请求、日志与数据库证据，再启动预先提供的修复版，以同一计划回归，输出 HTML 和 JSON 报告。
-
-真实运行预期：原版 **8 通过、2 失败**；修复版 **10 通过**。两个失败场景指向同一个预设支付状态缺陷。这证明演示闭环能够发现并验证该缺陷，不代表通用自主测试平台已经完成。
+| 命令 | 做什么 | 是否需要模型 |
+| --- | --- | --- |
+| `prooflane harness` | 领导、产品、开发、测试四个角色协作完成测试或自动化目标 | 需要 |
+| `prooflane agent` | 单个 Agent 用文件、代码、进程、HTTP、浏览器工具完成任务 | 需要（或用离线配方） |
+| `prooflane eval` | 在埋了缺陷的用例上实测 Agent，由隐藏评分器打分 | 需要（`--reference` 不需要） |
+| `prooflane demo` | 下单支付演示：从需求到回归的完整测试闭环 | 不需要 |
+| `prooflane run` | 按目标从需求审查、设计、执行、排查、回归任一阶段切入 | 可选 |
+| `prooflane models` | 列出已配置模型服务提供的模型 | 需要配置 |
 
 ## 快速开始
 
-需要 Python 3.11+ 和 [uv](https://docs.astral.sh/uv/)。在仓库根目录执行：
+需要 Python 3.11+ 和 [uv](https://docs.astral.sh/uv/)。
 
 ```sh
 uv sync --extra browser --group dev
 uv run playwright install chromium --only-shell
-uv run prooflane demo
+
+uv run prooflane demo              # 离线跑完整测试闭环，输出 HTML 报告
+uv run prooflane eval --reference  # 离线验证评测集和评分器
 ```
 
-已安装 Chrome 时可以省去浏览器下载，直接运行：
+已安装 Chrome 时可用 `uv run prooflane demo --browser-channel chrome` 省去浏览器下载。
+
+## 接入模型
+
+万测王只读取你**明确指定**的配置，不会自动扫描 `.env` 或本机其他配置。支持 OpenAI 风格的 **Responses** 和 **Chat Completions** 两种接口，兼容各类中转服务。
+
+**方式一：配置文件**（推荐，格式与 Codex 的模型配置相近）
+
+```toml
+# my-model.toml
+model = "gpt-5.5"
+model_provider = "relay"
+reasoning_effort = "medium"      # 可选
+
+[model_providers.relay]
+base_url = "https://api.example.com/v1"
+wire_api = "responses"           # 或 "chat"
+env_key = "RELAY_API_KEY"        # 存放密钥的环境变量名
+timeout = 180                    # 可选，单次请求秒数
+max_retries = 4                  # 可选，429/5xx/超时自动退避重试
+```
 
 ```sh
-uv run prooflane demo --browser-channel chrome
+export PROOFLANE_CONFIG=my-model.toml RELAY_API_KEY=...
+uv run prooflane models
 ```
 
-命令输出本次报告的绝对路径。用浏览器打开 `report.html`，查看需求来源、待澄清项、原版与修复版结果、截图和证据链接。每次执行使用独立输出目录，自动关闭自己启动的服务与浏览器。
+密钥只放在环境变量里；配置文件中出现 `api_key` 会被直接拒绝。完整示例见 [examples/model-config.toml](examples/model-config.toml)。
 
-- 数据库：`.prooflane/state.db`，保存任务状态、阶段事件和报告引用。
-- 制品：`.prooflane/runs/<task-id>/`，含需求快照、计划、请求、截图、数据库快照、服务日志、源码摘要及报告。
-- 退出码：完整闭环成功为 `0`；失败或阻塞为 `2`；用户中断为 `130`。
-- `--no-browser` 只运行接口部分，浏览器记为阻塞，不能宣告完整闭环成功。
-- `--requirements PATH` 支持指定需求文件，但当前执行器仅接受已审查的演示业务条目；业务条目变化会阻塞，防止使用旧断言给新需求背书。
-
-这些本地运行资料和凭据不会提交到仓库。演示服务只监听回环地址；使用一次性数据库和演示账户，没有真实交易。它不是可部署的订单或支付系统。
-
-## 调度 Agent：按目标从不同阶段切入
-
-使用 `prooflane run` 提交目标。支持 review、design、execute、investigate、regress 五个阶段，`--entry` 指定切入点，`--until` 指定停止阶段，`--from-run` 导入并校验已有资料。缺少前置条件时先补齐；已有有效证据可复用；指定重做的阶段会使下游结果失效。只审需求时不会启动被测服务，回归始终新跑修复版。
+**方式二：环境变量**
 
 ```sh
-uv run prooflane run '只做需求审查' --requirements src/prooflane/demo/requirements.md
+export PROOFLANE_LLM_URL=https://api.example.com/v1/responses   # 或 .../chat/completions
+export PROOFLANE_LLM_MODEL=gpt-5.5
+export PROOFLANE_LLM_API_KEY=...
 ```
 
-默认 `--scheduler rules` 为可复现的离线依赖调度；`--scheduler llm` 可用模型理解目标、选择下一阶段并说明原因。`--planner llm` 另行启用模型需求审查与计划生成。真实模型的推理质量尚未验收；模型不能越过前置条件或自行宣布测试成功。
+模型输出截断、拒答、返回非 JSON，或者重试次数用完，都会让任务阻塞并留下记录，绝不会悄悄换成离线结果。
 
-详见 [调度方式、阶段切入与证据复用](docs/dispatcher.md)。
-
-## 模型规划（可选）
-
-默认 `--planner fixture` 使用明确标注的离线样例计划和人工编写的审查问题，不调用模型。
-
-使用 `--planner llm` 时，显式配置 `.env.example` 所列的三个环境变量：完整端点、模型名及可选 API key。端点须以 `/chat/completions` 或 `/responses` 结尾，分别使用两种接口。程序不会自动读取 `.env` 或扫描本机其他配置；此模式会把需求内容发往你配置的端点。
+## 角色协作 Harness
 
 ```sh
-uv run prooflane demo --planner llm --browser-channel chrome
+uv run prooflane harness '根据 requirements.md 为 service.py 编写接口测试并报告缺陷' \
+  --workspace YOUR_PROJECT --allow-process
 ```
 
-模型输出 JSON 测试计划与需求审查问题。模型只能选择现有受控场景，不能提交任意代码、删掉必测场景或改变断言。输出经过本地校验；缺配置、拒绝、截断、网络故障或无效计划都会阻塞，不会悄悄切换为离线结果。
+| 角色 | 职责 | 工具 |
+| --- | --- | --- |
+| 领导 | 拆解目标、委派、查收；不能自己宣布完成 | 无执行工具 |
+| 产品 | 逐条梳理编号需求，按交付物制定一次性验收 | 读文件、代码结构 |
+| 开发 | 实现脚本或修复，逐条落实退出码、分页、重试等细节 | 读写文件、代码结构、进程 |
+| 测试 | 按等价类、边界值、状态与错误路径设计用例；失败先复核再定性 | 新建测试与报告文件、进程、HTTP、浏览器、验收 |
 
-目前模型适配器已通过本地 HTTP 契约桩测试，尚未验证真实模型供应商。当前采用 JSON mode，并在本地验证业务约束；不声称供应商保证 schema。接口参考：[官方结构化输出说明](https://developers.openai.com/api/docs/guides/structured-outputs)。浏览器实现参考：[Playwright Library](https://playwright.dev/python/docs/library) 与 [Network](https://playwright.dev/python/docs/network)。
+测试角色只能新建文件或修改自己创建的文件，不能改被测代码。领导只有在测试角色对当前状态跑过验收、全部通过之后才能交付。详见 [Harness 分工与边界](docs/harness.md)。
 
-## 开发验证
+## 用评测集衡量聪明程度
+
+“聪明”要能量出来。`prooflane eval` 让 Agent 在三个埋了缺陷的用例上实际工作，结束后才运行评分器：
+
+| 用例 | 场景 | 评分方式 |
+| --- | --- | --- |
+| `api-coupon` | 购物车 HTTP 接口，埋了 3 个缺陷 | 拿 Agent 的测试去跑 10 个变异版本 + 核对缺陷报告 |
+| `web-signup` | 注册页面，埋了 2 个缺陷 | 同上，用浏览器测试 |
+| `script-inventory` | 库存同步脚本 | 7 条隐藏验收测试 |
+
+- 测试必须在正确实现上通过，否则视为误报，不得分。
+- Agent 宣布完成、评分却不满分，记为一次**虚假完成**，这是最需要压低的指标。
+- 评分在工作区副本上进行，Agent 改了被测代码也影响不了分数。
+
+**当前分数**：尚未取得真实模型的成绩。所有用例的参考答案都能拿满分，空交付得 0 分。详见 [评测集说明](docs/evaluation.md)。
+
+## 下单支付演示
+
+`prooflane demo` 导入七条需求、生成十个受控场景，启动原版服务执行接口和浏览器测试，关联请求、日志与数据库证据，再对预先提供的修复版用同一计划回归，最后输出 HTML 和 JSON 报告。预期结果：原版 **8 通过、2 失败**，修复版 **10 通过**，两个失败指向同一个预设支付缺陷。
+
+- 数据：`.prooflane/state.db` 保存任务状态和事件；`.prooflane/runs/<task-id>/` 保存需求快照、计划、请求、截图、日志和报告。
+- 退出码：成功 `0`，失败或阻塞 `2`，用户中断 `130`。
+- `--no-browser` 只跑接口部分，浏览器部分记为阻塞，不会宣告闭环成功。
+
+演示服务只监听本机地址，使用一次性数据库，没有真实交易。按阶段切入的用法见 [调度说明](docs/dispatcher.md)，离线的非支付样例见 [农场自动化](examples/farm-automation/README.md)。
+
+## 安全边界
+
+- 文件工具限定在工作区内；HTTP 和浏览器只能访问 `--allow-origin` 明确允许的地址。
+- `process.run` 需要 `--allow-process`，以当前用户权限运行，**不是沙箱**。
+- 角色权限是应用层约束，不是操作系统隔离。
+- 外部文档、网页、日志、代码一律当作待分析的数据，不当作指令。
+- 报告和工具输出可能包含项目数据，默认只保存在本地。
+
+## 已实现与规划
+
+**已实现**：角色协作 harness、通用 Agent 工具循环、隐藏评分评测集、Responses/Chat 双接口模型接入（含重试和模型列表）、下单支付完整闭环、按阶段调度和证据复用。所有涉及模型的流程目前都用契约桩配合真实工具做过测试。
+
+**尚未实现**：真实模型的评测成绩、执行沙箱、崩溃续跑、RAG、OCR、桌面控制、多 Agent 并行、Web 工作台。路线图见 [docs/roadmap.md](docs/roadmap.md)，架构见 [docs/architecture.md](docs/architecture.md)。
+
+## 参与开发
 
 ```sh
 uv run ruff check .
 uv run ruff format --check .
 uv run python -m unittest discover -s tests -v
+# 浏览器集成测试
+PROOFLANE_TEST_BROWSER=1 uv run python -m unittest discover -s tests -v
 ```
 
-完整浏览器集成测试：
-
-```sh
-PROOFLANE_TEST_BROWSER=1 PROOFLANE_BROWSER_CHANNEL=chrome uv run python -m unittest discover -s tests -v
-```
-
-使用已下载 Chromium 时省略 `PROOFLANE_BROWSER_CHANNEL`。CI 覆盖 Python 3.11–3.13 的核心检查，并单独运行 Chromium 闭环。
-
-## 范围与后续
-
-已经实现：需求编号及原文行号、版本快照、受控计划、HTTP 执行、浏览器操作和请求采集、SQLite 状态验证、日志关联、任务状态机、正常中断清理、回归比较、可检查报告和文件摘要。
-
-尚未实现：任意需求的自主用例生成、独立模型专长 Agent 的并行协作、RAG、OCR、通用代码影响分析、分布式追踪、崩溃续跑、自动代码修复及可视化工作台。当前的全链路限于本地页面、HTTP、单服务数据库与日志。修复代码是演示预先提供的版本。
-
-- [编码原则与开发约定](AGENTS.md)
-- [架构](docs/architecture.md)
-- [阶段计划](docs/roadmap.md)
-- [演示说明](examples/checkout/README.md)
-- [需求源文件](src/prooflane/demo/requirements.md)
-
-项目尚未选择开源许可证；公开与许可证选择另行确定。
+开发约定见 [AGENTS.md](AGENTS.md)。项目尚未选择开源许可证。
