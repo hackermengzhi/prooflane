@@ -106,7 +106,7 @@ def verify_checks(checks: list, tools: Tools) -> list[dict]:
 def report_agent(directory: Path, summary: dict) -> Path:
     escape = html.escape
     steps = "".join(
-        f"<li><strong>{escape(step['action'])} {escape(step.get('tool', ''))}</strong> "
+        f"<li><strong>{escape(step.get('role', 'agent'))} / {escape(step['action'])} {escape(step.get('tool', ''))}</strong> "
         f"{escape(step.get('reason', ''))}<pre>{escape(json.dumps(step.get('observation', {}), ensure_ascii=False, indent=2))}</pre></li>"
         for step in summary["steps"]
     )

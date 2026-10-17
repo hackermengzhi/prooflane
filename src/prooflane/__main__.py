@@ -4,6 +4,7 @@ from pathlib import Path
 
 from .agent import run_agent
 from .dispatcher import STAGES, run_task
+from .harness import run_harness
 from .store import Store
 from .tools import ToolPolicy
 from .workflow import run_closed_loop
@@ -60,6 +61,15 @@ def main() -> int:
     agent.add_argument("--browser-channel", choices=["chrome", "msedge"])
     agent.add_argument("--max-steps", type=int, default=20)
     agent.add_argument("--output", type=Path, default=Path(".prooflane/agent-runs"))
+    harness = commands.add_parser("harness", help="Leader/product/developer/tester organization")
+    harness.add_argument("goal")
+    harness.add_argument("--workspace", type=Path, required=True)
+    harness.add_argument("--checks", type=Path)
+    harness.add_argument("--allow-process", action="store_true")
+    harness.add_argument("--allow-origin", action="append", default=[])
+    harness.add_argument("--browser-channel", choices=["chrome", "msedge"])
+    harness.add_argument("--max-steps", type=int, default=30)
+    harness.add_argument("--output", type=Path, default=Path(".prooflane/harness-runs"))
     args = parser.parse_args()
     store = Store(args.db)
     if args.command == "init":
@@ -70,6 +80,25 @@ def main() -> int:
         print(json.dumps(store.tasks(), ensure_ascii=False, indent=2))
     elif args.command == "attach":
         print(store.attach(args.task_id, args.uri, args.description))
+    elif args.command == "harness":
+        result = run_harness(
+            store,
+            args.goal,
+            ToolPolicy(
+                args.workspace, args.allow_process, tuple(args.allow_origin), args.browser_channel
+            ),
+            args.output,
+            checks=json.loads(args.checks.read_text()) if args.checks else None,
+            max_steps=args.max_steps,
+        )
+        print(
+            json.dumps(
+                {key: result[key] for key in ["task_id", "status", "report", "error"]},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0 if result["status"] == "completed" else 2
     elif args.command == "agent":
         result = run_agent(
             store,
