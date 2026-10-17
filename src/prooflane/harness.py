@@ -24,6 +24,8 @@ ROLE_TOOLS = {
         "files.edit",
         "code.inspect",
         "process.run",
+        "debug.capabilities",
+        "debug.run",
     },
     "tester": {
         "files.list",
@@ -32,6 +34,8 @@ ROLE_TOOLS = {
         "files.edit",
         "code.inspect",
         "process.run",
+        "debug.capabilities",
+        "debug.run",
         "http.request",
         "browser.run",
     },

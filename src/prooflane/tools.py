@@ -14,6 +14,7 @@ from urllib.parse import urlparse
 from urllib.request import Request, build_opener
 
 from prooflane.artifacts import digest, write_json
+from prooflane.debugging import capabilities, run_debugger
 from prooflane.models import NoRedirect
 from prooflane.reverse import identify_artifact, inspect_strings
 from prooflane.selfcheck import check_mutations
@@ -24,7 +25,12 @@ MAX_PROCESS_SECONDS = 60
 IGNORED_DIRECTORIES = {".git", ".venv", "node_modules", "__pycache__", ".prooflane"}
 FILE_CHANGING_TOOLS = {"files.write", "files.edit"}
 # Tools that may alter the workspace or a target system, so acceptance must exist first.
-STATE_CHANGING_TOOLS = FILE_CHANGING_TOOLS | {"process.run", "http.request", "browser.run"}
+STATE_CHANGING_TOOLS = FILE_CHANGING_TOOLS | {
+    "process.run",
+    "http.request",
+    "browser.run",
+    "debug.run",
+}
 
 
 @dataclass(frozen=True)
@@ -63,6 +69,8 @@ class Tools:
         self.origins = {origin(url) for url in policy.allowed_origins}
         self.sequence = 0
         self.handlers = {
+            "debug.capabilities": self.debug_capabilities,
+            "debug.run": self.debug_run,
             "files.list": self.list_files,
             "files.read": self.read_file,
             "files.write": self.write_file,
@@ -76,8 +84,26 @@ class Tools:
             "browser.run": self.run_browser,
         }
 
+    def debug_capabilities(self, directory: Path) -> dict:
+        return capabilities()
+
+    def debug_run(self, directory: Path, **arguments) -> dict:
+        return run_debugger(self, directory, **arguments)
+
     def catalog(self) -> dict:
         return {
+            "debug.capabilities": {"arguments": {}},
+            "debug.run": {
+                "enabled": self.policy.allow_process,
+                "arguments": {
+                    "backend": "lldb/gdb/frida/cheatengine",
+                    "script": "workspace command/JS/Lua file",
+                    "target": "workspace executable for LLDB/GDB, exclusive with pid",
+                    "pid": "explicit local PID",
+                    "seconds": "Frida observation duration 1..20, default 2",
+                    "timeout": "managed process timeout, default 15; Cheat Engine exports only",
+                },
+            },
             "files.list": {"arguments": {"path": "relative directory, default ."}},
             "files.read": {"arguments": {"path": "relative UTF-8 file"}},
             "files.write": {"arguments": {"path": "relative file", "content": "UTF-8 text"}},
