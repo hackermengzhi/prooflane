@@ -145,7 +145,7 @@ uv run python -m unittest discover -s tests -v
 PROOFLANE_TEST_BROWSER=1 uv run python -m unittest discover -s tests -v
 ```
 
-开发约定见 [AGENTS.md](AGENTS.md)。项目尚未选择开源许可证。
+开发约定见 [AGENTS.md](AGENTS.md)。以 [Apache License 2.0](LICENSE) 开源；再分发时须保留 [NOTICE](NOTICE) 中的版权与署名，许可证不授予使用“万测王”“Prooflane”名称的权利。
 
 
 调试扩展：开发与测试角色可调用 LLDB、GDB、Frida 适配器，以及 Cheat Engine Lua 导出工具。各平台安装和实际验证范围见 [调试工具说明](docs/debugging.md)。Cheat Engine 当前是脚本导出，不是已完成的实时控制桥接。
