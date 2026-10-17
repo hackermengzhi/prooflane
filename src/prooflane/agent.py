@@ -7,7 +7,7 @@ from pathlib import Path
 from prooflane.artifacts import manifest, write_json
 from prooflane.models import ModelOutputError, request_json
 from prooflane.store import Store
-from prooflane.tools import ToolPolicy, Tools
+from prooflane.tools import FILE_CHANGING_TOOLS, STATE_CHANGING_TOOLS, ToolPolicy, Tools
 
 SYSTEM_PROMPT = (
     "You are Prooflane's general testing and automation dispatcher. Work toward the user's goal "
@@ -17,7 +17,7 @@ SYSTEM_PROMPT = (
     "{action:'set_checks', checks:list, reason:string}; {action:'finish', reason:string}; "
     "{action:'blocked', reason:string}. Define acceptance checks before making changes unless the user "
     "already supplied them. Checks have tool, arguments and assertions; each assertion has path "
-    "(a list of keys/indexes) and equals or contains. Checks must use observation tools, not files.write. "
+    "(a list of keys/indexes) and equals or contains. Checks must use observation tools, not file edits. "
     "Checks become immutable. Inspect before editing, keep changes small, and use process.run only "
     "when enabled. $PYTHON in argv means the current interpreter. A finish request always invokes the "
     "acceptance checks; failed checks are observations to investigate and repair. Never invent results. "
@@ -72,7 +72,7 @@ def validate_checks(checks: list, tools: Tools) -> list:
         if (
             not isinstance(check, dict)
             or check.get("tool") not in tools.handlers
-            or check["tool"] == "files.write"
+            or check["tool"] in FILE_CHANGING_TOOLS
         ):
             raise ValueError("Acceptance checks require a registered observation capability")
         if not isinstance(check.get("arguments"), dict):
@@ -228,16 +228,13 @@ def run_agent(
                     tool = decision.get("tool")
                     if not isinstance(tool, str):
                         raise ActionRejected("Tool name is required")
-                    if (
-                        tool in {"files.write", "process.run", "browser.run", "http.request"}
-                        and accepted is None
-                    ):
+                    if tool in STATE_CHANGING_TOOLS and accepted is None:
                         raise ActionRejected(
                             "Define acceptance checks before actions that may change state"
                         )
                     observation = tools.call(tool, decision.get("arguments"))
                     step.update(tool=tool, observation=observation)
-                    changed = changed or tool == "files.write"
+                    changed = changed or tool in FILE_CHANGING_TOOLS
                     # Every action invalidates the previous verification verdict.
                     summary["verification"] = []
                 elif action == "set_checks":
