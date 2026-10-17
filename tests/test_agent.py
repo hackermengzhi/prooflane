@@ -225,6 +225,20 @@ class ToolTests(unittest.TestCase):
         )
         self.assertFalse((self.root / "outside.txt").exists())
 
+    def test_edit_replaces_one_exact_occurrence_and_keeps_backup(self):
+        (self.workspace / "app.py").write_text("A = 1\nB = 1\n")
+
+        def edit(old, new):
+            return self.tools.call("files.edit", {"path": "app.py", "old": old, "new": new})
+
+        self.assertEqual(edit("= 1", "= 2")["status"], "blocked")
+        self.assertEqual(edit("C = 1", "C = 2")["status"], "blocked")
+        result = edit("B = 1", "B = 2")
+        self.assertEqual(result["status"], "succeeded")
+        self.assertEqual((self.workspace / "app.py").read_text(), "A = 1\nB = 2\n")
+        backup = self.root / result["evidence"] / "previous.bin"
+        self.assertEqual(backup.read_text(), "A = 1\nB = 1\n")
+
     def test_process_permission_timeout_nonzero_and_output_limit(self):
         disabled = Tools(ToolPolicy(self.workspace), self.root / "disabled")
         self.assertEqual(

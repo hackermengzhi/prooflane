@@ -108,5 +108,10 @@ class HarnessTests(unittest.TestCase):
             self.assertEqual(write("test_service.py", "draft"), "succeeded")
             self.assertEqual(write("test_service.py", "revised"), "succeeded")
             self.assertEqual(write("service.py", "VALUE = 2\n"), "blocked")
+            edit = {"path": "service.py", "old": "1", "new": "2"}
+            self.assertEqual(tester.call("files.edit", edit)["status"], "blocked")
+            own_edit = {"path": "test_service.py", "old": "revised", "new": "final"}
+            self.assertEqual(tester.call("files.edit", own_edit)["status"], "succeeded")
+            write("test_service.py", "revised")
             self.assertEqual((root / "service.py").read_text(), "VALUE = 1\n")
             self.assertEqual((root / "test_service.py").read_text(), "revised")
