@@ -1,0 +1,67 @@
+{
+  "title": "购物车接口：编写接口测试并找出缺陷",
+  "battleground": "api",
+  "goal": "根据 requirements.md 为 service.py 编写接口自动化测试 test_api.py：只用 Python 标准库 unittest，测试内自行调用 create_server 启动和关闭服务，覆盖全部需求及边界。运行测试，判断失败是否属于被测服务缺陷，把确认的缺陷写入 findings.json（JSON 列表，每项含 requirement 编号如 \"R1\" 和 summary）。不要修改 service.py。",
+  "allow_process": true,
+  "max_steps": 40,
+  "grading": {
+    "kind": "mutation",
+    "suite": ["$PYTHON", "-m", "unittest", "discover", "-s", ".", "-p", "test_api.py"],
+    "target": "service.py",
+    "reference": "reference_service.py",
+    "findings": "findings.json",
+    "seeded": ["quantity-zero-accepted", "coupon-threshold-exclusive", "free-shipping-before-discount"],
+    "mutants": [
+      {
+        "id": "quantity-zero-accepted",
+        "requirement": "R1",
+        "replace": ["not 1 <= quantity <= MAX_QUANTITY", "not 0 <= quantity <= MAX_QUANTITY"]
+      },
+      {
+        "id": "cumulative-quantity-unchecked",
+        "requirement": "R1",
+        "replace": ["cart[\"items\"].get(sku, 0) + quantity > MAX_QUANTITY", "quantity > MAX_QUANTITY"]
+      },
+      {
+        "id": "unknown-sku-bad-request",
+        "requirement": "R2",
+        "replace": ["self.respond(404, {\"error\": \"unknown sku\"})", "self.respond(400, {\"error\": \"unknown sku\"})"]
+      },
+      {
+        "id": "coupon-threshold-exclusive",
+        "requirement": "R3",
+        "replace": ["subtotal < COUPON_THRESHOLD", "subtotal <= COUPON_THRESHOLD"]
+      },
+      {
+        "id": "second-coupon-accepted",
+        "requirement": "R3",
+        "replace": ["elif cart[\"coupon\"]:", "elif False:"]
+      },
+      {
+        "id": "discount-rounded",
+        "requirement": "R4",
+        "replace": ["subtotal // 10 if", "round(subtotal / 10) if"]
+      },
+      {
+        "id": "free-shipping-before-discount",
+        "requirement": "R5",
+        "replace": ["0 < payable < FREE_SHIPPING_FROM", "0 < subtotal < FREE_SHIPPING_FROM"]
+      },
+      {
+        "id": "shipping-boundary-inclusive",
+        "requirement": "R5",
+        "replace": ["0 < payable < FREE_SHIPPING_FROM", "0 < payable <= FREE_SHIPPING_FROM"]
+      },
+      {
+        "id": "checkout-keeps-items",
+        "requirement": "R6",
+        "replace": ["cart[\"items\"], cart[\"coupon\"] = {}, None", "cart[\"coupon\"] = None"]
+      },
+      {
+        "id": "empty-checkout-accepted",
+        "requirement": "R6",
+        "replace": ["if not cart[\"items\"]:", "if False:"]
+      }
+    ]
+  }
+}

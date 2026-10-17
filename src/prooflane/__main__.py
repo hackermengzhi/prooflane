@@ -4,6 +4,7 @@ from pathlib import Path
 
 from .agent import run_agent
 from .dispatcher import STAGES, run_task
+from .evaluation import run_evaluation
 from .harness import run_harness
 from .store import Store
 from .tools import ToolPolicy
@@ -70,6 +71,16 @@ def main() -> int:
     harness.add_argument("--browser-channel", choices=["chrome", "msedge"])
     harness.add_argument("--max-steps", type=int, default=30)
     harness.add_argument("--output", type=Path, default=Path(".prooflane/harness-runs"))
+    evaluation = commands.add_parser(
+        "eval", help="Score agents on seeded cases with hidden graders"
+    )
+    evaluation.add_argument("--cases", type=Path, default=Path("evals/cases"))
+    evaluation.add_argument("--case", action="append", help="Case directory name; repeat as needed")
+    evaluation.add_argument("--mode", choices=["harness", "agent"], default="harness")
+    evaluation.add_argument(
+        "--reference", action="store_true", help="Grade bundled reference answers to validate cases"
+    )
+    evaluation.add_argument("--output", type=Path, default=Path(".prooflane/eval-runs"))
     args = parser.parse_args()
     store = Store(args.db)
     if args.command == "init":
@@ -80,6 +91,31 @@ def main() -> int:
         print(json.dumps(store.tasks(), ensure_ascii=False, indent=2))
     elif args.command == "attach":
         print(store.attach(args.task_id, args.uri, args.description))
+    elif args.command == "eval":
+        summary = run_evaluation(
+            args.cases,
+            store,
+            args.output,
+            names=args.case,
+            mode=args.mode,
+            reference=args.reference,
+        )
+        rows = [
+            {key: case[key] for key in ["case", "status", "score", "false_completion", "steps"]}
+            for case in summary["cases"]
+        ]
+        print(
+            json.dumps(
+                {
+                    "mean_score": summary["mean_score"],
+                    "false_completions": summary["false_completions"],
+                    "cases": rows,
+                    "details": str(Path(summary["directory"]) / "evaluation.json"),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
     elif args.command == "harness":
         result = run_harness(
             store,
