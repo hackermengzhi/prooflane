@@ -36,6 +36,7 @@ PYTHONPATH=src python3 -m unittest discover -s tests -v
 
 ## 设计与计划
 
+- [编码原则与开发约定](AGENTS.md)
 - [架构](docs/architecture.md)
 - [阶段计划](docs/roadmap.md)
 - [演示业务与验收标准](examples/checkout/requirements.md)
