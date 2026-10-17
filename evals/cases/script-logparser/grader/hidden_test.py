@@ -12,7 +12,7 @@ SCRIPT = Path(__file__).with_name("analyze.py")
 
 def log_line(target, status, *, method="GET", size="12"):
     return (
-        f'192.0.2.1 - alice [18/Oct/2026:10:00:00 +0000] '
+        f"192.0.2.1 - alice [18/Oct/2026:10:00:00 +0000] "
         f'"{method} {target} HTTP/1.1" {status} {size}\n'
     )
 
