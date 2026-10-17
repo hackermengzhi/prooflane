@@ -1,4 +1,6 @@
 """Durable local task and evidence registry."""
+
+import json
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
@@ -24,6 +26,13 @@ class Store:
                     description TEXT NOT NULL,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
+                CREATE TABLE IF NOT EXISTS events (
+                    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_id TEXT NOT NULL REFERENCES tasks(id),
+                    stage TEXT NOT NULL,
+                    detail TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
             """)
 
     @contextmanager
@@ -47,13 +56,48 @@ class Store:
 
     def tasks(self) -> list[dict]:
         with self.connect() as db:
-            return [dict(row) for row in db.execute("SELECT * FROM tasks ORDER BY created_at, rowid")]
+            return [
+                dict(row) for row in db.execute("SELECT * FROM tasks ORDER BY created_at, rowid")
+            ]
 
     def attach(self, task_id: str, uri: str, description: str) -> str:
         if not uri.strip():
             raise ValueError("Evidence URI cannot be empty")
         evidence_id = str(uuid4())
         with self.connect() as db:
-            db.execute("INSERT INTO evidence(id, task_id, uri, description) VALUES (?, ?, ?, ?)",
-                       (evidence_id, task_id, uri, description))
+            db.execute(
+                "INSERT INTO evidence(id, task_id, uri, description) VALUES (?, ?, ?, ?)",
+                (evidence_id, task_id, uri, description),
+            )
         return evidence_id
+
+    def transition(self, task_id: str, status: str, detail: dict) -> None:
+        transitions = {
+            "pending": {"planning", "blocked", "cancelled"},
+            "planning": {"running", "blocked", "cancelled"},
+            "running": {"investigating", "blocked", "cancelled"},
+            "investigating": {"regressing", "blocked", "cancelled"},
+            "regressing": {"completed", "failed", "blocked", "cancelled"},
+        }
+        with self.connect() as connection:
+            task = connection.execute(
+                "SELECT status FROM tasks WHERE id = ?", (task_id,)
+            ).fetchone()
+            if task is None:
+                raise ValueError("Unknown task")
+            if status not in transitions.get(task["status"], set()):
+                raise ValueError(f"Invalid task transition: {task['status']} -> {status}")
+            connection.execute("UPDATE tasks SET status = ? WHERE id = ?", (status, task_id))
+            connection.execute(
+                "INSERT INTO events(task_id, stage, detail) VALUES (?, ?, ?)",
+                (task_id, status, json.dumps(detail, ensure_ascii=False)),
+            )
+
+    def events(self, task_id: str) -> list[dict]:
+        with self.connect() as connection:
+            return [
+                {**dict(row), "detail": json.loads(row["detail"])}
+                for row in connection.execute(
+                    "SELECT * FROM events WHERE task_id = ? ORDER BY sequence", (task_id,)
+                )
+            ]

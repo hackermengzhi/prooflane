@@ -4,13 +4,29 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "prooflane"
-version = "0.1.0"
+version = "0.2.0"
 description = "Requirement-driven testing agents with traceable evidence"
 requires-python = ">=3.11"
 dependencies = []
+
+[project.optional-dependencies]
+browser = ["playwright>=1.50,<2"]
+
+[dependency-groups]
+dev = ["ruff>=0.9,<1"]
 
 [project.scripts]
 prooflane = "prooflane.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"prooflane.demo" = ["*.html", "*.md"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]

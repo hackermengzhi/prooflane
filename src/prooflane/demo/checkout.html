@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Prooflane · 下单支付演示</title>
+<style>
+  body { margin: 0; background: #eef3f7; color: #15243a; font: 18px system-ui,sans-serif; }
+  main { max-width: 760px; margin: 70px auto; padding: 40px; background: white; border-radius: 20px; }
+  small { color: #52647b; } h1 { margin-bottom: 12px; }
+  button { background: #244cdf; color: white; border: 0; border-radius: 9px; padding: 14px 20px; margin: 8px 8px 8px 0; font: inherit; cursor: pointer; }
+  button:disabled { opacity: .4; cursor: default; }
+  section { background: #f3f6fa; padding: 22px; border-radius: 12px; margin: 24px 0; }
+  output { font-weight: 650; } #error { color: #b3261e; }
+</style>
+<main>
+  <small>PROOFLANE / LOCAL CHECKOUT FIXTURE</small>
+  <h1>从下单到支付，验证每个状态</h1>
+  <p>本地测试商品 · 单价 ¥12.50 · 每次购买 2 件</p>
+  <button id="login">登录演示账户</button>
+  <button id="buy" disabled>创建订单</button>
+  <button id="pay" disabled>模拟支付成功</button>
+  <section>
+    <p>账户：<output id="user">未登录</output></p>
+    <p>订单：<output id="order">尚未创建</output></p>
+    <p>金额：<output id="total">—</output></p>
+    <p>状态：<output id="status">—</output></p>
+  </section>
+  <p id="error" role="alert"></p>
+  <small>支付为本地模拟器，无真实交易。状态读取自订单接口。</small>
+</main>
+<script>
+  let orderId;
+  async function request(path, body) {
+    const response = await fetch(path, {
+      method: body === undefined ? 'GET' : 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: body === undefined ? undefined : JSON.stringify(body)
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || '请求失败');
+    return result;
+  }
+  async function showOrder() {
+    const order = await request('/orders/' + orderId);
+    document.querySelector('#order').textContent = order.id;
+    document.querySelector('#total').textContent = '¥' + (order.total / 100).toFixed(2);
+    document.querySelector('#status').textContent = order.status;
+  }
+  function action(id, handler) {
+    document.querySelector(id).onclick = async () => {
+      document.querySelector('#error').textContent = '';
+      try { await handler(); }
+      catch (error) { document.querySelector('#error').textContent = error.message; }
+    };
+  }
+  action('#login', async () => {
+    await request('/login', {username: 'demo', password: 'demo'});
+    document.querySelector('#user').textContent = 'demo';
+    document.querySelector('#buy').disabled = false;
+  });
+  action('#buy', async () => {
+    orderId = (await request('/orders', {quantity: 2})).id;
+    await showOrder();
+    document.querySelector('#pay').disabled = false;
+  });
+  action('#pay', async () => {
+    window.paymentFinished = false;
+    await request('/simulate-payment', {order_id: orderId});
+    await showOrder();
+    window.paymentFinished = true;
+  });
+</script>
+</html>
