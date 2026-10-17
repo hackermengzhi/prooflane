@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "prooflane"
+version = "0.1.0"
+description = "Requirement-driven testing agents with traceable evidence"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+prooflane = "prooflane.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
