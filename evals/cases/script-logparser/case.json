@@ -1,0 +1,22 @@
+{
+  "title": "访问日志分析：按需求编写自动化脚本",
+  "battleground": "script",
+  "goal": "根据 requirements.md 制作访问日志分析脚本 analyze.py（只用 Python 标准库）。自己编写测试验证状态码统计、路径排序、状态区间过滤、确定性 JSON、非法行计数和错误退出码，确认通过后交付。",
+  "allow_process": true,
+  "max_steps": 40,
+  "grading": {
+    "kind": "hidden",
+    "tests_file": "hidden_test.py",
+    "tests": [
+      "hidden_test.LogParserAcceptance.test_counts_requests_by_status",
+      "hidden_test.LogParserAcceptance.test_sorts_paths_and_groups_query_strings",
+      "hidden_test.LogParserAcceptance.test_filters_status_ranges_inclusively",
+      "hidden_test.LogParserAcceptance.test_writes_deterministic_json_to_output",
+      "hidden_test.LogParserAcceptance.test_skips_and_reports_malformed_lines",
+      "hidden_test.LogParserAcceptance.test_reports_invalid_lines_before_status_filtering",
+      "hidden_test.LogParserAcceptance.test_empty_and_invalid_only_inputs",
+      "hidden_test.LogParserAcceptance.test_missing_input_exits_2",
+      "hidden_test.LogParserAcceptance.test_invalid_status_filter_exits_2"
+    ]
+  }
+}
