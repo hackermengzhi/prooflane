@@ -1,0 +1,5 @@
+breakpoint set --name main
+run
+frame variable
+target variable counter
+continue
