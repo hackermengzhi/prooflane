@@ -15,6 +15,7 @@ from urllib.request import Request, build_opener
 
 from prooflane.artifacts import digest, write_json
 from prooflane.models import NoRedirect
+from prooflane.reverse import identify_artifact, inspect_strings
 
 MAX_FILE_BYTES = 200_000
 MAX_OUTPUT_BYTES = 512_000
@@ -60,6 +61,8 @@ class Tools:
             "files.write": self.write_file,
             "files.edit": self.edit_file,
             "code.inspect": self.inspect_code,
+            "artifact.identify": self.identify_artifact,
+            "artifact.strings": self.inspect_strings,
             "process.run": self.run_process,
             "http.request": self.http_request,
             "browser.run": self.run_browser,
@@ -79,6 +82,18 @@ class Tools:
             },
             "code.inspect": {
                 "arguments": {"path": "Python file; returns AST symbols/imports/syntax"}
+            },
+            "artifact.identify": {
+                "arguments": {
+                    "path": "relative file; bounded header inspection, size and SHA-256 with scope"
+                }
+            },
+            "artifact.strings": {
+                "arguments": {
+                    "path": "relative file; scans a bounded prefix for printable ASCII strings",
+                    "min_length": "minimum string length, positive integer, default 4",
+                    "limit": "maximum returned strings, positive integer, default 200",
+                }
             },
             "process.run": {
                 "enabled": self.policy.allow_process,
@@ -219,6 +234,14 @@ class Tools:
             "imports": sorted(set(imports)),
             "sha256": source["sha256"],
         }
+
+    def identify_artifact(self, directory: Path, path: str) -> dict:
+        return identify_artifact(self.path(path), MAX_FILE_BYTES)
+
+    def inspect_strings(
+        self, directory: Path, path: str, min_length: int = 4, limit: int = 200
+    ) -> dict:
+        return inspect_strings(self.path(path), MAX_FILE_BYTES, min_length, limit)
 
     def run_process(self, directory: Path, argv: list[str], timeout: int = 15) -> dict:
         if not self.policy.allow_process:
