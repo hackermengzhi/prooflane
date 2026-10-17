@@ -25,14 +25,18 @@ SYSTEM_PROMPT = (
     "Use screenshot artifacts and DOM observations where available; do not claim OCR or desktop input tools."
 )
 
+# Large enough for a typical source file or test log, small enough to bound repeated context.
+CONTEXT_TEXT_LIMIT = 10_000
+
 
 def context_view(value):
     """Keep full observations on disk and bounded excerpts in the model context."""
     if isinstance(value, str):
         return (
             value
-            if len(value) <= 4000
-            else value[:4000] + "\n[truncated; inspect evidence or read targeted file]"
+            if len(value) <= CONTEXT_TEXT_LIMIT
+            else value[:CONTEXT_TEXT_LIMIT]
+            + "\n[truncated; inspect evidence or read targeted file]"
         )
     if isinstance(value, list):
         return [context_view(item) for item in value[:20]]
