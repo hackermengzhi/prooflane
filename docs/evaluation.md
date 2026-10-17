@@ -17,6 +17,7 @@ uv run prooflane eval --reference          # 用内置参考答案验证用例�
 | `api-coupon` | HTTP 接口 | `test_api.py` 与 `findings.json` | 变异评分 + 缺陷报告 |
 | `web-signup` | 浏览器页面 | `test_web.py` 与 `findings.json` | 变异评分 + 缺陷报告 |
 | `script-inventory` | 自动化脚本 | `sync.py` | 隐藏验收测试 |
+| `script-logparser` | 自动化脚本 | `analyze.py` | 隐藏验收测试 |
 
 每个用例目录含 `case.json`（目标、步数、评分配置）、`workspace/`（复制给 Agent 的资料）与 `grader/`（参考实现、隐藏测试和参考答案，不进入 Agent 工作区）。
 
