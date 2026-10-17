@@ -10,11 +10,124 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from prooflane.evaluation import grade_reproduce, prepare_workspace, run_evaluation
+from prooflane.evaluation import compare_runs, grade_reproduce, prepare_workspace, run_evaluation
 from prooflane.store import Store
 from prooflane.trials import OUTPUT_TAIL, mutate
 
 CASES = Path(__file__).resolve().parents[1] / "evals" / "cases"
+
+
+class ComparisonTests(unittest.TestCase):
+    def setUp(self):
+        self.runs = [
+            {
+                "mode": "external",
+                "agent_command": "example-agent",
+                "mean_score": 0.5,
+                "false_completions": 2,
+                "cases": [
+                    {"case": "zeta", "score": 0.0, "false_completion": True},
+                    {"case": "gamma", "score": 1.0, "false_completion": False},
+                    {"case": "beta", "score": 0.5, "false_completion": True},
+                ],
+            },
+            {
+                "mode": "external",
+                "agent_command": "example-agent",
+                "mean_score": 0.25,
+                "false_completions": 1,
+                "cases": [
+                    {"case": "gamma", "score": 0.25, "false_completion": True},
+                    {"case": "beta", "score": 0.5, "false_completion": False},
+                    {"case": "alpha", "score": 0.0, "false_completion": False},
+                ],
+            },
+        ]
+
+    def test_compare_runs_preserves_missing_cases_ties_and_summary(self):
+        original = json.dumps(self.runs)
+        result = compare_runs(self.runs)
+        first, second = "example-agent", "example-agent (2)"
+        self.assertEqual(result["labels"], [first, second])
+        self.assertEqual(
+            [case["case"] for case in result["cases"]], ["alpha", "beta", "gamma", "zeta"]
+        )
+        self.assertEqual(
+            result["cases"][0]["runs"],
+            {
+                first: {"score": None, "false_completion": None},
+                second: {"score": 0.0, "false_completion": False},
+            },
+        )
+        self.assertEqual(
+            result["cases"][-1]["runs"],
+            {
+                first: {"score": 0.0, "false_completion": True},
+                second: {"score": None, "false_completion": None},
+            },
+        )
+        self.assertEqual(
+            result["cases"][1]["runs"],
+            {
+                first: {"score": 0.5, "false_completion": True},
+                second: {"score": 0.5, "false_completion": False},
+            },
+        )
+        self.assertEqual(
+            result["per_case_best"],
+            {"alpha": [second], "beta": [first, second], "gamma": [first], "zeta": [first]},
+        )
+        self.assertEqual(
+            result["summary"],
+            {
+                first: {"mean_score": 0.5, "false_completions": 2, "case_count": 3},
+                second: {"mean_score": 0.25, "false_completions": 1, "case_count": 3},
+            },
+        )
+        self.assertEqual(json.dumps(self.runs), original)
+
+    def test_compare_runs_uses_mode_and_handles_suffix_collisions(self):
+        runs = [
+            {"mode": mode, "mean_score": 0.0, "false_completions": 0, "cases": []}
+            for mode in ["harness", "harness", "harness (2)"]
+        ]
+        result = compare_runs(runs)
+        self.assertEqual(result["labels"], ["harness", "harness (2)", "harness (2) (2)"])
+        self.assertEqual(result["cases"], [])
+        self.assertEqual(result["per_case_best"], {})
+        self.assertTrue(all(summary["case_count"] == 0 for summary in result["summary"].values()))
+
+    def test_compare_cli_prints_table_and_raw_json_and_requires_two_paths(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            paths = [root / f"run {index}.json" for index in range(2)]
+            for path, run in zip(paths, self.runs):
+                path.write_text(json.dumps(run), encoding="utf-8")
+            database = root / "unused.db"
+            base = [sys.executable, "-m", "prooflane", "--db", str(database), "eval-compare"]
+            table = subprocess.run(
+                [*base, *map(str, paths)], capture_output=True, text=True, timeout=10
+            )
+            self.assertEqual(table.returncode, 0, table.stderr)
+            for value in ["alpha", "beta", "gamma", "zeta", "example-agent", "example-agent (2)"]:
+                self.assertIn(value, table.stdout)
+            self.assertEqual(
+                table.stdout.splitlines()[-1].split(), ["mean_score", "0.500", "0.250"]
+            )
+            self.assertIn("-", table.stdout.splitlines()[1])
+            structured = subprocess.run(
+                [*base, *map(str, paths), "--json"], capture_output=True, text=True, timeout=10
+            )
+            self.assertEqual(structured.returncode, 0, structured.stderr)
+            self.assertEqual(json.loads(structured.stdout), compare_runs(self.runs))
+            for arguments in [[], [str(paths[0])]]:
+                with self.subTest(arguments=arguments):
+                    missing = subprocess.run(
+                        [*base, *arguments], capture_output=True, text=True, timeout=10
+                    )
+                    self.assertEqual(missing.returncode, 2)
+                    self.assertIn("error:", missing.stderr)
+            self.assertFalse(database.exists())
 
 
 class EvaluationTests(unittest.TestCase):

@@ -4,12 +4,28 @@ from pathlib import Path
 
 from .agent import run_agent
 from .dispatcher import STAGES, run_task
-from .evaluation import DEFAULT_AGENT_TIMEOUT, run_evaluation
+from .evaluation import DEFAULT_AGENT_TIMEOUT, compare_runs, run_evaluation
 from .harness import run_harness
 from .models import list_models
 from .store import Store
 from .tools import ToolPolicy
 from .workflow import run_closed_loop
+
+
+def _print_comparison(comparison: dict) -> None:
+    labels = comparison["labels"]
+    rows = [["case", *labels]]
+    for case in comparison["cases"]:
+        scores = [case["runs"][label]["score"] for label in labels]
+        rows.append(
+            [case["case"], *[f"{score:.3f}" if score is not None else "-" for score in scores]]
+        )
+    rows.append(
+        ["mean_score", *[f"{comparison['summary'][label]['mean_score']:.3f}" for label in labels]]
+    )
+    widths = [max(len(value) for value in column) for column in zip(*rows)]
+    for row in rows:
+        print("  ".join(value.ljust(width) for value, width in zip(row, widths)).rstrip())
 
 
 def main() -> int:
@@ -92,7 +108,23 @@ def main() -> int:
         "--reference", action="store_true", help="Grade bundled reference answers to validate cases"
     )
     evaluation.add_argument("--output", type=Path, default=Path(".prooflane/eval-runs"))
+    comparison = commands.add_parser("eval-compare", help="Compare saved evaluation results")
+    comparison.add_argument("runs", type=Path, nargs="+", help="Two or more evaluation.json paths")
+    comparison.add_argument("--json", action="store_true", help="Print structured comparison JSON")
     args = parser.parse_args()
+    if args.command == "eval-compare":
+        if len(args.runs) < 2:
+            parser.error("eval-compare requires at least two evaluation.json paths")
+        try:
+            runs = [json.loads(path.read_text(encoding="utf-8")) for path in args.runs]
+        except (OSError, ValueError) as exc:
+            parser.error(str(exc))
+        result = compare_runs(runs)
+        if args.json:
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+        else:
+            _print_comparison(result)
+        return 0
     if args.command == "eval" and args.mode == "external" and not args.agent_command:
         parser.error("--mode external requires --agent-command")
     store = Store(args.db)

@@ -51,6 +51,18 @@ uv run prooflane eval --mode external --case script-logparser --agent-timeout 30
 
 每例目录保留完整的 `stdout.txt`、`stderr.txt`。结果 JSON 的 `external` 字段记录 argv、退出码（`returncode`）、执行耗时（`seconds`，不含评分）、是否超时（`timed_out`）、日志路径，以及各日志最多最后 3000 字节的 UTF-8 解码文本；汇总记录 `mode: external` 和原样的 `agent_command`。比较时应选择同一批用例，并记录各 Agent 使用的模型、版本和超时配置。
 
+先后运行两个 Agent，再用 `eval-compare` 读取已有结果并排比较。以下示例在同一份 `evals/cases` 上选择同两个用例；运行前配置 harness 模型端点及 Codex，并记录万测王、Codex 和各自模型的名称与版本，以及超时配置。两次评测之间保持用例和隐藏评分器不变：
+
+```sh
+uv run prooflane eval --mode harness --cases evals/cases --case api-coupon --case script-logparser --output .prooflane/compare/harness
+uv run prooflane eval --mode external --cases evals/cases --case api-coupon --case script-logparser --agent-command "codex exec --skip-git-repo-check -s workspace-write -" --output .prooflane/compare/codex
+# 展开各输出目录下的结果；多次评测时可改用 details 中的具体路径
+uv run prooflane eval-compare .prooflane/compare/harness/*/evaluation.json .prooflane/compare/codex/*/evaluation.json
+uv run prooflane eval-compare .prooflane/compare/harness/*/evaluation.json .prooflane/compare/codex/*/evaluation.json --json
+```
+
+`eval-compare` 至少接收两个结果路径。默认表格按用例名排序、以 Agent 为列，分数保留三位小数，缺失用例显示 `-`，末行显示各次评测原有的均值。标签优先使用 `agent_command`，否则使用 `mode`，重名追加序号。`--json` 输出完整结构：`labels` 为标签列表，`cases` 中每项的 `runs` 按标签保存 `score` 与 `false_completion`（缺失时均为 `null`），`summary` 按标签保存原有的 `mean_score`、`false_completions` 和 `case_count`，`per_case_best` 按用例名列出所有并列最高分标签。缺失用例不参与最高分比较。对比只读取结果，不重新评分或检查评分器是否相同；用例集合不同时，均值仍来自各次评测自己的用例集合，不能直接据此排名。
+
 ## 当前限制
 
 - 用例数量少，适合发现明显短板和比较改动前后的差异，不足以支撑统计意义上的能力结论。
