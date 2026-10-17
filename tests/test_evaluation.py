@@ -6,8 +6,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from prooflane.evaluation import run_evaluation
-from prooflane.trials import mutate
 from prooflane.store import Store
+from prooflane.trials import mutate
 
 CASES = Path(__file__).resolve().parents[1] / "evals" / "cases"
 
