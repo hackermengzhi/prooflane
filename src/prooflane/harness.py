@@ -11,7 +11,7 @@ from prooflane.agent import (
     verify_checks,
 )
 from prooflane.artifacts import manifest, write_json
-from prooflane.models import ModelOutputError, request_json
+from prooflane.models import ModelOutputError, request_json, usage_since, usage_snapshot
 from prooflane.store import Store
 from prooflane.tools import STATE_CHANGING_TOOLS, ToolPolicy, Tools
 
@@ -132,6 +132,7 @@ def run_harness(
     max_steps: int = 30,
 ) -> dict:
     task_id = store.create(goal)
+    usage_before = usage_snapshot()
     directory = output.resolve() / task_id
     directory.mkdir(parents=True)
     summary = {
@@ -267,6 +268,7 @@ def run_harness(
     except Exception as error:
         summary.update(status="blocked", error=f"{type(error).__name__}: {error}")
     store.transition(task_id, summary["status"], {})
+    summary["usage"] = usage_since(usage_before)
     summary["events"] = store.events(task_id)
     write_json(directory / "checks.json", accepted or [])
     write_json(directory / "summary.json", summary)

@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 from prooflane.artifacts import manifest, write_json
-from prooflane.models import ModelOutputError, request_json
+from prooflane.models import ModelOutputError, request_json, usage_since, usage_snapshot
 from prooflane.store import Store
 from prooflane.tools import FILE_CHANGING_TOOLS, STATE_CHANGING_TOOLS, ToolPolicy, Tools
 
@@ -164,6 +164,7 @@ def run_agent(
     max_steps: int = 20,
 ) -> dict:
     task_id = store.create(goal)
+    usage_before = usage_snapshot()
     directory = output.resolve() / task_id
     directory.mkdir(parents=True)
     summary = {
@@ -300,6 +301,7 @@ def run_agent(
     store.transition(
         task_id, summary["status"], {"verification_passed": summary["status"] == "completed"}
     )
+    summary["usage"] = usage_since(usage_before)
     summary["events"] = store.events(task_id)
     write_json(directory / "checks.json", accepted or [])
     write_json(directory / "summary.json", summary)
