@@ -1,0 +1,5 @@
+[
+  {"requirement": "N1", "summary": "quote(0) 返回报价而未抛出 ValueError；N1 要求重量必须大于 0。"},
+  {"requirement": "N3", "summary": "quote(1, 'remote') 的 remote 为 400 分（会员也是 400 分），N3 要求固定附加 450 分。"},
+  {"requirement": "N4", "summary": "quote(30, member=True) 的 discount 为 742 分、total 为 5448 分；N4 要求会员减免最多 600 分，此单应减免 600 分、收费 5590 分。"}
+]

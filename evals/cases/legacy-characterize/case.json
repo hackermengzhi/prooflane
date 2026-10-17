@@ -1,0 +1,92 @@
+{
+  "title": "旧运费库：读代码、编写特征测试并核对零散备忘",
+  "battleground": "legacy",
+  "goal": "阅读 NOTES.md 和无文档旧代码 tariff.py，弄清实际计价行为，为纯函数库编写 test_legacy.py：只用 Python 标准库 unittest。备忘没有写到的行为以现有代码为准，用特征测试锁定，覆盖分档、边界、取整及规则组合。运行测试，把对照备忘确认的缺陷写入 findings.json（JSON 列表，每项含 requirement 编号如 \"N1\" 和 summary，说明复现输入、实际行为及备忘要求）。不要修改 tariff.py，也不要把未记载的现有行为当作缺陷。",
+  "allow_process": true,
+  "max_steps": 40,
+  "grading": {
+    "kind": "mutation",
+    "suite": ["$PYTHON", "-m", "unittest", "discover", "-s", ".", "-p", "test_legacy.py"],
+    "target": "tariff.py",
+    "reference": "reference_tariff.py",
+    "findings": "findings.json",
+    "seeded": ["zero-weight-accepted", "remote-fee-reduced", "member-cap-raised"],
+    "mutants": [
+      {
+        "id": "zero-weight-accepted",
+        "requirement": "N1",
+        "replace": ["if not 0 < w <= MAX_WEIGHT:", "if not 0 <= w <= MAX_WEIGHT:"]
+      },
+      {
+        "id": "remote-fee-reduced",
+        "requirement": "N3",
+        "replace": ["REMOTE_FEE = 450", "REMOTE_FEE = 400"]
+      },
+      {
+        "id": "member-cap-raised",
+        "requirement": "N4",
+        "replace": ["MEMBER_CAP = 600", "MEMBER_CAP = 900"]
+      },
+      {
+        "id": "half-kilogram-rounded-down",
+        "requirement": "legacy-weight-step",
+        "replace": ["u = int((w * 2).to_integral_value(rounding=ROUND_CEILING))", "u = int(w * 2)"]
+      },
+      {
+        "id": "exact-half-kilogram-advanced",
+        "requirement": "legacy-weight-step",
+        "replace": ["u = int((w * 2).to_integral_value(rounding=ROUND_CEILING))", "u = int(w * 2) + 1"]
+      },
+      {
+        "id": "first-weight-band-expanded",
+        "requirement": "legacy-weight-bands",
+        "replace": ["if u <= 2:", "if u <= 3:"]
+      },
+      {
+        "id": "middle-weight-band-expanded",
+        "requirement": "legacy-weight-bands",
+        "replace": ["elif u <= 6:", "elif u <= 7:"]
+      },
+      {
+        "id": "heavy-weight-step-reduced",
+        "requirement": "legacy-weight-bands",
+        "replace": ["b = 1060 + (u - 6) * 95", "b = 1060 + (u - 6) * 90"]
+      },
+      {
+        "id": "country-base-increased",
+        "requirement": "legacy-zone-base",
+        "replace": ["b += 180", "b += 200"]
+      },
+      {
+        "id": "member-discount-rounded",
+        "requirement": "legacy-discount-rounding",
+        "replace": ["(b * 12) // 100", "(b * 12 + 50) // 100"]
+      },
+      {
+        "id": "express-ties-rounded-even",
+        "requirement": "legacy-express-rounding",
+        "replace": ["(Decimal(b) / 4).to_integral_value(rounding=ROUND_HALF_UP)", "(Decimal(b) / 4).to_integral_value()"]
+      },
+      {
+        "id": "express-after-member-discount",
+        "requirement": "legacy-express-order",
+        "replace": ["Decimal(b) / 4", "Decimal(b - d) / 4"]
+      },
+      {
+        "id": "minimum-before-extras",
+        "requirement": "legacy-minimum-order",
+        "replace": ["total = max(MINIMUM_FEE, b + r + x - d)", "total = max(MINIMUM_FEE, b - d) + r + x"]
+      },
+      {
+        "id": "zone-whitespace-retained",
+        "requirement": "legacy-zone-normalization",
+        "replace": ["z = z.strip().lower()", "z = z.lower()"]
+      },
+      {
+        "id": "billed-weight-doubled",
+        "requirement": "legacy-weight-step",
+        "replace": ["\"grams\": u * 500", "\"grams\": u * 1000"]
+      }
+    ]
+  }
+}
