@@ -65,13 +65,17 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(result["defects"][0]["regression_status"], "passed")
             self.assertEqual(store.tasks()[0]["status"], "blocked")
             self.assertEqual(
-                [event["stage"] for event in store.events(result["task_id"])],
                 [
-                    "planning",
-                    "running",
-                    "investigating",
-                    "regressing",
-                    "blocked",
+                    event["stage"]
+                    for event in store.events(result["task_id"])
+                    if event["stage"].endswith(".finished")
+                ],
+                [
+                    "review.finished",
+                    "design.finished",
+                    "execute.finished",
+                    "investigate.finished",
+                    "regress.finished",
                 ],
             )
             run = Path(result["directory"])

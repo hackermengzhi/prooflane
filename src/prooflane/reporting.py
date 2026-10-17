@@ -47,13 +47,20 @@ def write_report(directory: Path, summary: dict) -> Path:
     )
     questions = "".join(
         f"<li>{escape(question)}</li>"
-        for question in summary.get("plan", {}).get("review_questions", [])
+        for question in summary.get("review", summary.get("plan", {}).get("review_questions", []))
     )
     timeline = "".join(
         f"<li><strong>{escape(event['stage'])}</strong> · {escape(event['created_at'])}</li>"
         for event in summary.get("events", [])
     )
     verdict = "闭环验证完成" if summary["closed_loop"] else "闭环尚未完成"
+    if summary["status"] == "completed" and summary.get("target") != "regress":
+        verdict = "阶段任务完成（未执行完整闭环）"
+    decisions = "".join(
+        f"<li>{escape(item['action'])} / {escape(item.get('stage') or '—')}：{escape(item['reason'])}</li>"
+        for item in summary.get("decisions", [])
+    )
+    reuse = "".join(f"<li>{escape(note)}</li>" for note in summary.get("reuse_notes", []))
     error = f'<p class="failed">{escape(summary["error"])}</p>' if summary.get("error") else ""
     counts = []
     for cases, label in [(baseline.values(), "原版"), (regression.values(), "回归")]:
@@ -86,7 +93,8 @@ a {{ color:#2853c9; }} code {{ overflow-wrap:anywhere; }} .table {{ overflow-x:a
 <p>{escape("；".join(counts))}</p>
 <p>任务 <code>{escape(summary["task_id"])}</code></p>
 <p>本报告测试本地下单演示服务。原版含预设支付状态缺陷，修复版为仓库预先提供的代码；本次没有自动编写修复。</p>
-<p>规划方式：{escape(summary.get("plan", {}).get("planner", "未完成"))}；模型实际调用：{summary.get("plan", {}).get("model_called", False)}。</p>{error}</header>
+<p>规划方式：{escape(summary.get("plan", {}).get("planner", "未完成"))}；计划生成时模型实际调用：{summary.get("plan", {}).get("model_called", False)}。</p>{error}</header>
+<section><h2>调度决策</h2><p>目标：{escape(summary.get("goal", "完整闭环"))}；调度方式：{escape(summary.get("scheduler", "legacy"))}；切入点：{escape(summary.get("requested_entry") or "自动")}；终点：{escape(summary.get("target", "regress"))}。</p><ol>{decisions}</ol><ul>{reuse}</ul>{artifact_link("dispatch.json", "调度记录")}</section>
 <section><h2>需求与来源</h2><p>文档 SHA-256：<code>{escape(summary.get("document", {}).get("sha256", "未导入"))}</code></p>
 <ol>{requirements}</ol>{artifact_link("requirements.md", "需求快照")} · {artifact_link("plan.json", "测试计划")}</section>
 <section><h2>需求审查：待确认的问题</h2><ul>{questions}</ul><p>这些是待澄清项，不是已证实的产品缺陷。</p></section>

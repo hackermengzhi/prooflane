@@ -73,7 +73,8 @@ class Store:
 
     def transition(self, task_id: str, status: str, detail: dict) -> None:
         transitions = {
-            "pending": {"planning", "blocked", "cancelled"},
+            "pending": {"planning", "active", "blocked", "cancelled"},
+            "active": {"completed", "failed", "blocked", "cancelled"},
             "planning": {"running", "blocked", "cancelled"},
             "running": {"investigating", "blocked", "cancelled"},
             "investigating": {"regressing", "blocked", "cancelled"},
@@ -101,3 +102,15 @@ class Store:
                     "SELECT * FROM events WHERE task_id = ? ORDER BY sequence", (task_id,)
                 )
             ]
+
+    def record_event(self, task_id: str, stage: str, detail: dict) -> None:
+        with self.connect() as connection:
+            task = connection.execute(
+                "SELECT status FROM tasks WHERE id = ?", (task_id,)
+            ).fetchone()
+            if task is None or task["status"] != "active":
+                raise ValueError("Stage events require an active task")
+            connection.execute(
+                "INSERT INTO events(task_id, stage, detail) VALUES (?, ?, ?)",
+                (task_id, stage, json.dumps(detail, ensure_ascii=False)),
+            )

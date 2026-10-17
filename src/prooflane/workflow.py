@@ -6,13 +6,10 @@ import platform
 import shutil
 from pathlib import Path
 
-from prooflane.artifacts import digest, manifest, write_json
+from prooflane.artifacts import digest, write_json
 from prooflane.demo import payment_broken, payment_fixed
 from prooflane.execution import execute_case
-from prooflane.planning import fixture_plan, model_plan
 from prooflane.process import checkout_service
-from prooflane.reporting import write_report
-from prooflane.requirements import import_requirements
 from prooflane.store import Store
 
 
@@ -101,84 +98,16 @@ def run_closed_loop(
     browser_enabled: bool = True,
     channel: str | None = None,
 ) -> dict:
-    task_id = store.create("下单支付：需求到缺陷与回归闭环")
-    directory = output.resolve() / task_id
-    directory.mkdir(parents=True)
-    summary = {
-        "task_id": task_id,
-        "status": "pending",
-        "closed_loop": False,
-        "baseline": [],
-        "regression": [],
-        "defects": [],
-        "error": None,
-    }
-    try:
-        store.transition(task_id, "planning", {"planner": planner})
-        shutil.copyfile(requirements, directory / "requirements.md")
-        summary["document"] = import_requirements(directory / "requirements.md")
-        write_json(directory / "document.json", summary["document"])
-        if planner not in {"fixture", "llm"}:
-            raise ValueError("Unknown planner")
-        summary["plan"] = (
-            fixture_plan(summary["document"])
-            if planner == "fixture"
-            else model_plan(summary["document"])
-        )
-        write_json(directory / "plan.json", summary["plan"])
-        plan_hash = digest(directory / "plan.json")
-        compare_sources(directory)
-        store.transition(task_id, "running", {"revision": "broken", "plan_sha256": plan_hash})
-        summary["baseline"] = run_phase(
-            directory / "baseline", "broken", summary["plan"], browser_enabled, channel
-        )
-        store.transition(task_id, "investigating", {"baseline_results": "baseline/results.json"})
-        summary["defects"] = [
-            {
-                "id": f"D{index}",
-                "scenario": case["scenario"],
-                "requirement_id": case["requirement_id"],
-                "observation": case["error"],
-                "evidence": f"baseline/{case['scenario']}/result.json",
-                "origin": "seeded-demo-defect",
-                "repair": "pre-supplied fixed revision",
-            }
-            for index, case in enumerate(
-                [case for case in summary["baseline"] if case["status"] == "failed"], start=1
-            )
-        ]
-        write_json(directory / "defects.json", summary["defects"])
-        store.transition(task_id, "regressing", {"revision": "fixed", "plan_sha256": plan_hash})
-        summary["regression"] = run_phase(
-            directory / "regression", "fixed", summary["plan"], browser_enabled, channel
-        )
-        fixed_results = {case["scenario"]: case for case in summary["regression"]}
-        for defect in summary["defects"]:
-            defect["regression_status"] = fixed_results[defect["scenario"]]["status"]
-            defect["regression_evidence"] = f"regression/{defect['scenario']}/result.json"
-        all_results = summary["baseline"] + summary["regression"]
-        blocked = any(case["status"] == "blocked" for case in all_results)
-        fixed_passed = all(case["status"] == "passed" for case in summary["regression"])
-        same_plan = digest(directory / "plan.json") == plan_hash
-        summary["closed_loop"] = (
-            bool(summary["defects"]) and not blocked and fixed_passed and same_plan
-        )
-        summary["status"] = (
-            "completed" if summary["closed_loop"] else "blocked" if blocked else "failed"
-        )
-        summary["plan_sha256"] = plan_hash
-        store.transition(task_id, summary["status"], {"closed_loop": summary["closed_loop"]})
-    except KeyboardInterrupt:
-        summary.update(status="cancelled", error="Execution cancelled by user")
-        store.transition(task_id, "cancelled", {})
-    except Exception as error:
-        summary.update(status="blocked", error=f"{type(error).__name__}: {error}")
-        store.transition(task_id, "blocked", {"error": summary["error"]})
-    summary["events"] = store.events(task_id)
-    write_json(directory / "defects.json", summary["defects"])
-    write_json(directory / "summary.json", summary)
-    report = write_report(directory, summary)
-    write_json(directory / "manifest.json", manifest(directory))
-    for path in [report, directory / "summary.json", directory / "manifest.json"]:
-        store.attach(task_id, path.as_uri(), path.name)
-    return {**summary, "report": str(report), "directory": str(directory)}
+    """Compatibility entry point; all stage selection is delegated to the dispatcher."""
+    from prooflane.dispatcher import run_task
+
+    return run_task(
+        store,
+        "完成下单支付完整闭环",
+        output,
+        requirements=requirements,
+        target="regress",
+        planner=planner,
+        browser_enabled=browser_enabled,
+        channel=channel,
+    )

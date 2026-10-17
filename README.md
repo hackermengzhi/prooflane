@@ -36,6 +36,18 @@ uv run prooflane demo --browser-channel chrome
 
 这些本地运行资料和凭据不会提交到仓库。演示服务只监听回环地址；使用一次性数据库和演示账户，没有真实交易。它不是可部署的订单或支付系统。
 
+## 调度 Agent：按目标从不同阶段切入
+
+使用 `prooflane run` 提交目标。支持 review、design、execute、investigate、regress 五个阶段，`--entry` 指定切入点，`--until` 指定停止阶段，`--from-run` 导入并校验已有资料。缺少前置条件时先补齐；已有有效证据可复用；指定重做的阶段会使下游结果失效。只审需求时不会启动被测服务，回归始终新跑修复版。
+
+```sh
+uv run prooflane run '只做需求审查' --requirements src/prooflane/demo/requirements.md
+```
+
+默认 `--scheduler rules` 为可复现的离线依赖调度；`--scheduler llm` 可用模型理解目标、选择下一阶段并说明原因。`--planner llm` 另行启用模型需求审查与计划生成。真实模型的推理质量尚未验收；模型不能越过前置条件或自行宣布测试成功。
+
+详见 [调度方式、阶段切入与证据复用](docs/dispatcher.md)。
+
 ## 模型规划（可选）
 
 默认 `--planner fixture` 使用明确标注的离线样例计划和人工编写的审查问题，不调用模型。
@@ -70,7 +82,7 @@ PROOFLANE_TEST_BROWSER=1 PROOFLANE_BROWSER_CHANNEL=chrome uv run python -m unitt
 
 已经实现：需求编号及原文行号、版本快照、受控计划、HTTP 执行、浏览器操作和请求采集、SQLite 状态验证、日志关联、任务状态机、正常中断清理、回归比较、可检查报告和文件摘要。
 
-尚未实现：任意需求的自主用例生成、真实多 Agent 调度、RAG、OCR、通用代码影响分析、分布式追踪、崩溃续跑、自动代码修复及可视化工作台。当前的全链路限于本地页面、HTTP、单服务数据库与日志。修复代码是演示预先提供的版本。
+尚未实现：任意需求的自主用例生成、独立模型专长 Agent 的并行协作、RAG、OCR、通用代码影响分析、分布式追踪、崩溃续跑、自动代码修复及可视化工作台。当前的全链路限于本地页面、HTTP、单服务数据库与日志。修复代码是演示预先提供的版本。
 
 - [编码原则与开发约定](AGENTS.md)
 - [架构](docs/architecture.md)
