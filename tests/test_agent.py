@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from prooflane.agent import run_agent
+from prooflane.models import ModelOutputError
 from prooflane.store import Store
 from prooflane.tools import ToolPolicy, Tools
 
@@ -101,6 +102,7 @@ class AgentTests(unittest.TestCase):
                 },
                 "stub",
             ),
+        ] + [
             (
                 {
                     "action": "set_checks",
@@ -108,12 +110,51 @@ class AgentTests(unittest.TestCase):
                     "reason": "make it pass",
                 },
                 "stub",
-            ),
-        ]
+            )
+        ] * 3
         with patch("prooflane.agent.request_json", side_effect=decisions):
             result = self.run_goal()
         self.assertEqual(result["status"], "blocked")
         self.assertIn("immutable", result["error"])
+        self.assertEqual(
+            [step["action"] for step in result["steps"]], ["set_checks", "rejected", "rejected"]
+        )
+        checks = json.loads((Path(result["directory"]) / "checks.json").read_text())
+        self.assertIn("raise SystemExit(1)", checks[0]["arguments"]["argv"][2])
+
+    def test_model_corrects_malformed_decisions_from_feedback(self):
+        checks = [process_check(["$PYTHON", "-c", "import program"])]
+        responses = [
+            ({"action": "set_checks", "checks": checks, "reason": "acceptance"}, "stub"),
+            ModelOutputError("Model returned an invalid JSON response"),
+            ({"action": "call", "reason": "forgot the tool name"}, "stub"),
+            (
+                {
+                    "action": "call",
+                    "tool": "files.write",
+                    "arguments": {"path": "program.py", "content": "VALUE = 1\n"},
+                    "reason": "implement",
+                },
+                "stub",
+            ),
+            ({"action": "finish", "reason": "verify"}, "stub"),
+        ]
+        seen = []
+
+        def model_stub(prompt, payload):
+            seen.append(payload["recent_steps"])
+            response = responses[len(seen) - 1]
+            if isinstance(response, Exception):
+                raise response
+            return response
+
+        with patch("prooflane.agent.request_json", side_effect=model_stub):
+            result = self.run_goal()
+        self.assertEqual(result["status"], "completed", result["error"])
+        rejected = [step for step in result["steps"] if step["action"] == "rejected"]
+        self.assertEqual([step["attempted"] for step in rejected], [None, "call"])
+        # The model sees why its previous decision was rejected before trying again.
+        self.assertEqual(seen[3][-1]["observation"], {"error": "Tool name is required"})
 
     def test_recipe_failure_and_missing_verification_cannot_report_completion(self):
         result = self.run_goal(

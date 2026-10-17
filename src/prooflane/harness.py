@@ -2,9 +2,16 @@
 
 from pathlib import Path
 
-from prooflane.agent import context_view, report_agent, validate_checks, verify_checks
+from prooflane.agent import (
+    ActionRejected,
+    context_view,
+    reject,
+    report_agent,
+    validate_checks,
+    verify_checks,
+)
 from prooflane.artifacts import manifest, write_json
-from prooflane.models import request_json
+from prooflane.models import ModelOutputError, request_json
 from prooflane.store import Store
 from prooflane.tools import ToolPolicy, Tools
 
@@ -125,6 +132,7 @@ def run_harness(
     tools = {}
     active = "leader"
     assignment = goal
+    rejections = 0
     try:
         store.transition(task_id, "active", {"goal": goal})
         if type(max_steps) is not int or not 1 <= max_steps <= 100:
@@ -133,84 +141,105 @@ def run_harness(
         if checks is not None:
             accepted = validate_checks(checks, tools["tester"])
         for index in range(max_steps):
-            prompt = f"{COMMON_GUIDE} You are the {active}. {ROLE_GUIDES[active]}"
-            decision, model = request_json(
-                prompt,
-                {
-                    "user_goal": goal,
-                    "assignment": assignment,
-                    "capabilities": tools[active].catalog() if active != "leader" else {},
-                    "checks": accepted,
-                    "recent_steps": context_view(summary["steps"][-8:]),
-                    "verification": context_view(summary["verification"]),
-                    "remaining_steps": max_steps - index,
-                },
-            )
-            action = decision.get("action")
-            if not isinstance(decision.get("reason"), str):
-                raise ValueError("Role decision requires a reason")
-            step = {"role": active, "action": action, "reason": decision["reason"], "model": model}
-            if active == "leader":
-                if action == "delegate":
-                    role = decision.get("role")
-                    task = decision.get("task")
-                    if role not in ROLE_TOOLS or not isinstance(task, str) or not task.strip():
-                        raise ValueError("Delegation requires a registered role and task")
-                    step["observation"] = {"assigned_to": role, "task": task}
-                    summary["handoffs"].append(step["observation"])
-                    active, assignment = role, task
-                elif action == "finish":
-                    if (
-                        not accepted
-                        or not summary["verification"]
-                        or not all(
-                            result["status"] == "passed" for result in summary["verification"]
-                        )
-                    ):
-                        raise ValueError(
-                            "Leader cannot deliver without current independent tester verification"
-                        )
-                    summary["status"] = "completed"
-                elif action == "blocked":
-                    raise RuntimeError(decision["reason"])
-                else:
-                    raise ValueError("Leader must delegate rather than execute specialist tools")
-            elif action == "call":
-                tool = decision.get("tool")
-                if tool not in tools[active].handlers:
-                    raise ValueError(f"Tool not available to {active}: {tool}")
-                if (
-                    tool in {"files.write", "process.run", "http.request", "browser.run"}
-                    and accepted is None
-                ):
-                    raise ValueError("Define acceptance before potentially state-changing actions")
-                step.update(
-                    tool=tool, observation=tools[active].call(tool, decision.get("arguments"))
+            step = {"role": active, "action": None, "reason": ""}
+            try:
+                prompt = f"{COMMON_GUIDE} You are the {active}. {ROLE_GUIDES[active]}"
+                decision, model = request_json(
+                    prompt,
+                    {
+                        "user_goal": goal,
+                        "assignment": assignment,
+                        "capabilities": tools[active].catalog() if active != "leader" else {},
+                        "checks": accepted,
+                        "recent_steps": context_view(summary["steps"][-8:]),
+                        "verification": context_view(summary["verification"]),
+                        "remaining_steps": max_steps - index,
+                    },
                 )
-                summary["verification"] = []
-            elif action == "set_checks" and active == "product":
-                if accepted is not None:
-                    raise ValueError("Acceptance checks are immutable")
-                accepted = validate_checks(decision.get("checks"), tools["tester"])
-                summary["checks_origin"] = "product-proposed"
-                step["observation"] = {"checks_defined": len(accepted)}
-            elif action == "verify" and active == "tester":
-                if not accepted:
-                    raise ValueError("No acceptance checks defined")
-                summary["verification"] = verify_checks(accepted, tools["tester"])
-                step["observation"] = {"verification": summary["verification"]}
-            elif action == "report":
-                message = decision.get("message")
-                if not isinstance(message, str) or not message.strip():
-                    raise ValueError("Specialist report requires findings")
-                step["observation"] = {"message": message}
-                active, assignment = "leader", goal
-            elif action == "blocked":
-                # Specialist blockers return to the leader for reassignment or clarification.
-                step["observation"] = {"blocker": decision["reason"]}
-                active, assignment = "leader", goal
-            else:
-                raise ValueError("Action is not available to this role")
+                action = decision.get("action")
+                if not isinstance(decision.get("reason"), str):
+                    raise ActionRejected("Role decision requires a reason")
+                step = {
+                    "role": active,
+                    "action": action,
+                    "reason": decision["reason"],
+                    "model": model,
+                }
+                if active == "leader":
+                    if action == "delegate":
+                        role = decision.get("role")
+                        task = decision.get("task")
+                        if role not in ROLE_TOOLS or not isinstance(task, str) or not task.strip():
+                            raise ActionRejected("Delegation requires a registered role and task")
+                        step["observation"] = {"assigned_to": role, "task": task}
+                        summary["handoffs"].append(step["observation"])
+                        active, assignment = role, task
+                    elif action == "finish":
+                        if (
+                            not accepted
+                            or not summary["verification"]
+                            or not all(
+                                result["status"] == "passed" for result in summary["verification"]
+                            )
+                        ):
+                            raise ActionRejected(
+                                "Leader cannot deliver without current independent tester verification"
+                            )
+                        summary["status"] = "completed"
+                    elif action == "blocked":
+                        raise RuntimeError(decision["reason"])
+                    else:
+                        raise ActionRejected(
+                            "Leader must delegate rather than execute specialist tools"
+                        )
+                elif action == "call":
+                    tool = decision.get("tool")
+                    if tool not in tools[active].handlers:
+                        raise ActionRejected(f"Tool not available to {active}: {tool}")
+                    if (
+                        tool in {"files.write", "process.run", "http.request", "browser.run"}
+                        and accepted is None
+                    ):
+                        raise ActionRejected(
+                            "Define acceptance before potentially state-changing actions"
+                        )
+                    step.update(
+                        tool=tool, observation=tools[active].call(tool, decision.get("arguments"))
+                    )
+                    summary["verification"] = []
+                elif action == "set_checks" and active == "product":
+                    if accepted is not None:
+                        raise ActionRejected("Acceptance checks are immutable")
+                    try:
+                        accepted = validate_checks(decision.get("checks"), tools["tester"])
+                    except ValueError as error:
+                        raise ActionRejected(str(error)) from None
+                    summary["checks_origin"] = "product-proposed"
+                    step["observation"] = {"checks_defined": len(accepted)}
+                elif action == "verify" and active == "tester":
+                    if not accepted:
+                        raise ActionRejected("No acceptance checks defined")
+                    summary["verification"] = verify_checks(accepted, tools["tester"])
+                    step["observation"] = {"verification": summary["verification"]}
+                elif action == "report":
+                    message = decision.get("message")
+                    if not isinstance(message, str) or not message.strip():
+                        raise ActionRejected("Specialist report requires findings")
+                    step["observation"] = {"message": message}
+                    active, assignment = "leader", goal
+                elif action == "blocked":
+                    # Specialist blockers return to the leader for reassignment or clarification.
+                    step["observation"] = {"blocker": decision["reason"]}
+                    active, assignment = "leader", goal
+                else:
+                    raise ActionRejected("Action is not available to this role")
+            except (ActionRejected, ModelOutputError) as error:
+                rejections += 1
+                step = reject(step, error, rejections)
+                summary["steps"].append(step)
+                store.record_event(task_id, "harness.rejected", step)
+                continue
+            rejections = 0
             summary["steps"].append(step)
             store.record_event(task_id, "harness.step", step)
             write_json(directory / "session.json", summary)

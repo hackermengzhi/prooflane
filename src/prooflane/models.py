@@ -20,6 +20,10 @@ MAX_BACKOFF_SECONDS = 60
 MAX_RESPONSE_BYTES = 1024 * 1024
 
 
+class ModelOutputError(ValueError):
+    """The provider answered, but not with a complete JSON object the caller can act on."""
+
+
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, request, file, code, message, headers, new_url):
         # A provider redirect must not forward the API key or the requirement document.
@@ -141,19 +145,19 @@ def request_body(settings: ModelSettings, system_prompt: str, content: str) -> d
 def chat_text(result: dict) -> str:
     choice = result["choices"][0]
     if choice.get("finish_reason") != "stop" or choice["message"].get("refusal"):
-        raise ValueError("Model did not return a completed JSON response")
+        raise ModelOutputError("Model did not return a completed JSON response")
     return choice["message"]["content"]
 
 
 def responses_text(result: dict) -> str:
     # "incomplete" means truncated output, which must not be parsed as a decision.
     if result["status"] != "completed":
-        raise ValueError("Model did not return a completed JSON response")
+        raise ModelOutputError("Model did not return a completed JSON response")
     parts = [
         part for item in result["output"] if item["type"] == "message" for part in item["content"]
     ]
     if not parts or any(part["type"] != "output_text" for part in parts):
-        raise ValueError("Model did not return a completed JSON response")
+        raise ModelOutputError("Model did not return a completed JSON response")
     return "".join(part["text"] for part in parts)
 
 
@@ -199,9 +203,9 @@ def request_json(system_prompt: str, payload: dict) -> tuple[dict, str]:
         text = responses_text(result) if settings.wire_api == "responses" else chat_text(result)
         plan = json.loads(text)
     except (KeyError, IndexError, TypeError, json.JSONDecodeError) as error:
-        raise ValueError("Model returned an invalid JSON response") from error
+        raise ModelOutputError("Model returned an invalid JSON response") from error
     if not isinstance(plan, dict):
-        raise ValueError("Model must return a JSON object")
+        raise ModelOutputError("Model must return a JSON object")
     return plan, settings.model
 
 
