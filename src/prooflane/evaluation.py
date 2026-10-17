@@ -19,10 +19,15 @@ RUNNERS = {"harness": run_harness, "agent": run_agent}
 
 def prepare_workspace(case_dir: Path, grading: dict, destination: Path) -> Path:
     shutil.copytree(case_dir / "workspace", destination, ignore=COPY_IGNORE)
-    if grading["kind"] == "mutation":
+    if grading["kind"] in {"mutation", "reproduce"}:
         # The defective target is derived from the reference so seeded bugs cannot drift.
         reference = (case_dir / "grader" / grading["reference"]).read_text(encoding="utf-8")
-        seeded = [item["replace"] for item in grading["mutants"] if item["id"] in grading["seeded"]]
+        if grading["kind"] == "reproduce":
+            seeded = [grading["defect"]]
+        else:
+            seeded = [
+                item["replace"] for item in grading["mutants"] if item["id"] in grading["seeded"]
+            ]
         target = destination / grading["target"]
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(mutate(reference, seeded), encoding="utf-8")
@@ -77,6 +82,37 @@ def grade_mutation(case_dir: Path, grading: dict, workspace: Path) -> dict:
     }
 
 
+def grade_reproduce(case_dir: Path, grading: dict, workspace: Path) -> dict:
+    """A focused reproduction fails before the fix and passes after unrelated changes."""
+    reference = (case_dir / "grader" / grading["reference"]).read_text(encoding="utf-8")
+    target, suite = grading["target"], grading["suite"]
+    before = run_trial(workspace, {target: mutate(reference, [grading["defect"]])}, suite)
+    after = run_trial(workspace, {target: reference}, suite)
+    variants = [{target: mutate(reference, [item["replace"]])} for item in grading["decoys"]]
+    with ThreadPoolExecutor() as pool:
+        trials = list(pool.map(lambda overlay: run_trial(workspace, overlay, suite), variants))
+    decoys = [
+        {
+            "id": item["id"],
+            "passed": trial["passed"],
+            "output": None if trial["passed"] else trial["output"],
+        }
+        for item, trial in zip(grading["decoys"], trials)
+    ]
+    failure_rate = sum(not item["passed"] for item in decoys) / len(decoys) if decoys else 0.0
+    fails_before = not before["passed"]
+    passes_after = after["passed"]
+    return {
+        "fails_before": fails_before,
+        "passes_after": passes_after,
+        "defect_output": before["output"] if fails_before else None,
+        "reference_output": None if passes_after else after["output"],
+        "decoys": decoys,
+        "decoy_failure_rate": failure_rate,
+        "score": 1 - 0.5 * failure_rate if fails_before and passes_after else 0.0,
+    }
+
+
 def grade_hidden(case_dir: Path, grading: dict, workspace: Path) -> dict:
     """Run each hidden acceptance test separately against the agent's deliverable."""
     tests_file = grading["tests_file"]
@@ -94,7 +130,7 @@ def grade_hidden(case_dir: Path, grading: dict, workspace: Path) -> dict:
     return {"tests": tests, "score": sum(item["passed"] for item in tests) / len(tests)}
 
 
-GRADERS = {"mutation": grade_mutation, "hidden": grade_hidden}
+GRADERS = {"mutation": grade_mutation, "reproduce": grade_reproduce, "hidden": grade_hidden}
 
 
 def run_case(case_dir: Path, store: Store, output: Path, *, mode: str, reference: bool) -> dict:
