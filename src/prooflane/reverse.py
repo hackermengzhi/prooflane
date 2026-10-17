@@ -73,7 +73,7 @@ def mach_header(content: bytes) -> dict:
     architectures = []
     for index in range(count):
         offset = 8 + index * entry_size
-        cpu = int.from_bytes(content[offset:offset + 4], byteorder)
+        cpu = int.from_bytes(content[offset : offset + 4], byteorder)
         architectures.append(MACH_ARCHITECTURES.get(cpu, f"cpu-{cpu:#x}"))
     return {"format": "mach-o", "byteorder": byteorder, "architectures": architectures}
 
@@ -95,7 +95,7 @@ def identify_header(content: bytes, truncated: bool) -> dict:
         if len(content) >= 64:
             offset = int.from_bytes(content[60:64], "little")
             if offset >= 64 and offset + 4 <= len(content):
-                result["is_pe"] = content[offset:offset + 4] == b"PE\0\0"
+                result["is_pe"] = content[offset : offset + 4] == b"PE\0\0"
             elif offset >= 64 and truncated:
                 # The signature lies beyond the inspected prefix, so it is unverified.
                 result["is_pe"] = None
@@ -132,9 +132,7 @@ def identify_artifact(source: Path, max_bytes: int) -> dict:
     return result
 
 
-def inspect_strings(
-    source: Path, max_bytes: int, min_length: int = 4, limit: int = 200
-) -> dict:
+def inspect_strings(source: Path, max_bytes: int, min_length: int = 4, limit: int = 200) -> dict:
     if type(min_length) is not int or min_length < 1:
         raise ValueError("min_length must be a positive integer")
     if type(limit) is not int or limit < 1:
