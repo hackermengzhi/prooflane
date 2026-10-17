@@ -19,7 +19,9 @@ def mutate(source: str, replacements: list[list[str]]) -> str:
     return source
 
 
-def run_trial(workspace: Path, overlay: dict[str, str], argv: list[str]) -> dict:
+def run_trial(
+    workspace: Path, overlay: dict[str, str], argv: list[str], timeout: int = TRIAL_TIMEOUT
+) -> dict:
     """Run a command on a disposable copy of the agent's final workspace."""
     with tempfile.TemporaryDirectory() as temporary:
         trial = Path(temporary) / "workspace"
@@ -33,11 +35,11 @@ def run_trial(workspace: Path, overlay: dict[str, str], argv: list[str]) -> dict
                 cwd=trial,
                 capture_output=True,
                 text=True,
-                timeout=TRIAL_TIMEOUT,
+                timeout=timeout,
                 stdin=subprocess.DEVNULL,
             )
         except subprocess.TimeoutExpired:
-            return {"passed": False, "returncode": None, "output": "grader timeout"}
+            return {"passed": False, "returncode": None, "output": "trial timeout"}
     output = completed.stdout + completed.stderr
     return {
         "passed": completed.returncode == 0,

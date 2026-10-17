@@ -16,9 +16,11 @@ from urllib.request import Request, build_opener
 from prooflane.artifacts import digest, write_json
 from prooflane.models import NoRedirect
 from prooflane.reverse import identify_artifact, inspect_strings
+from prooflane.selfcheck import check_mutations
 
 MAX_FILE_BYTES = 200_000
 MAX_OUTPUT_BYTES = 512_000
+MAX_PROCESS_SECONDS = 60
 IGNORED_DIRECTORIES = {".git", ".venv", "node_modules", "__pycache__", ".prooflane"}
 FILE_CHANGING_TOOLS = {"files.write", "files.edit"}
 # Tools that may alter the workspace or a target system, so acceptance must exist first.
@@ -31,6 +33,11 @@ class ToolPolicy:
     allow_process: bool = False
     allowed_origins: tuple[str, ...] = ()
     browser_channel: str | None = None
+
+
+def check_timeout(timeout: int) -> None:
+    if type(timeout) is not int or not 1 <= timeout <= MAX_PROCESS_SECONDS:
+        raise ValueError(f"Process timeout must be 1..{MAX_PROCESS_SECONDS} seconds")
 
 
 def origin(url: str) -> str:
@@ -64,6 +71,7 @@ class Tools:
             "artifact.identify": self.identify_artifact,
             "artifact.strings": self.inspect_strings,
             "process.run": self.run_process,
+            "quality.mutate": self.check_mutations,
             "http.request": self.http_request,
             "browser.run": self.run_browser,
         }
@@ -100,6 +108,15 @@ class Tools:
                 "arguments": {
                     "argv": "list of strings; $PYTHON means current interpreter",
                     "timeout": "1..60 seconds, default 15",
+                },
+            },
+            "quality.mutate": {
+                "enabled": self.policy.allow_process,
+                "arguments": {
+                    "target": "workspace-relative UTF-8 source file",
+                    "suite": "nonempty argv list; $PYTHON means current interpreter",
+                    "mutants": "at most 30 items: {id: unique string, replace: [old, new]}",
+                    "timeout": "per-run 1..60 seconds, default 15",
                 },
             },
             "http.request": {
@@ -248,8 +265,7 @@ class Tools:
             raise ValueError("Process capability is disabled for this task")
         if not isinstance(argv, list) or not argv or not all(isinstance(arg, str) for arg in argv):
             raise ValueError("argv must be a nonempty list of strings")
-        if type(timeout) is not int or not 1 <= timeout <= 60:
-            raise ValueError("Process timeout must be 1..60 seconds")
+        check_timeout(timeout)
         if os.name != "posix":
             raise ValueError("Managed process execution currently supports macOS/Linux")
         command = [sys.executable if item == "$PYTHON" else item for item in argv]
@@ -296,6 +312,28 @@ class Tools:
             "stopped": stopped,
             "output": captured.decode("utf-8", errors="replace")[:12000],
         }
+
+    def check_mutations(
+        self,
+        directory: Path,
+        target: str,
+        suite: list[str],
+        mutants: list[dict],
+        timeout: int = 15,
+    ) -> dict:
+        if not self.policy.allow_process:
+            raise ValueError("Process capability is disabled for this task")
+        check_timeout(timeout)
+        source = self.read_file(directory, target)["content"]
+        relative = str(self.path(target).relative_to(self.workspace))
+        # copytree follows symlinks, which can read outside or change mutation semantics.
+        for current, directories, names in os.walk(self.workspace, followlinks=False):
+            for name in directories + names:
+                candidate = Path(current) / name
+                if candidate.is_symlink():
+                    self.path(str(candidate.relative_to(self.workspace)))
+                    raise ValueError("Trial workspace must not contain symlinks")
+        return check_mutations(self.workspace, relative, source, suite, mutants, timeout)
 
     def http_request(
         self, directory: Path, url: str, method: str = "GET", body: dict | None = None
