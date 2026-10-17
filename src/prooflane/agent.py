@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 from prooflane.artifacts import manifest, write_json
-from prooflane.models import request_json
+from prooflane.models import ModelOutputError, request_json
 from prooflane.store import Store
 from prooflane.tools import ToolPolicy, Tools
 
@@ -27,6 +27,26 @@ SYSTEM_PROMPT = (
 
 # Large enough for a typical source file or test log, small enough to bound repeated context.
 CONTEXT_TEXT_LIMIT = 10_000
+# A model gets this many consecutive chances to correct malformed or disallowed decisions.
+MAX_CONSECUTIVE_REJECTIONS = 3
+
+
+class ActionRejected(ValueError):
+    """A model decision that breaks the action contract; it is fed back for correction."""
+
+
+def reject(step: dict, error: Exception, rejections: int) -> dict:
+    """Record a rejected decision, or stop once the model keeps repeating such mistakes."""
+    if rejections >= MAX_CONSECUTIVE_REJECTIONS:
+        raise RuntimeError(
+            f"Model broke the action contract {rejections} times in a row; last error: {error}"
+        ) from None
+    return {
+        **step,
+        "action": "rejected",
+        "attempted": step["action"],
+        "observation": {"error": str(error)},
+    }
 
 
 def context_view(value):
@@ -159,6 +179,7 @@ def run_agent(
     }
     accepted = None
     changed = False
+    rejections = 0
     try:
         store.transition(task_id, "active", {"engine": summary["engine"], "goal": goal})
         if type(max_steps) is not int or not 1 <= max_steps <= 50:
@@ -180,58 +201,72 @@ def run_agent(
             actions = actions + [{"action": "finish", "reason": "执行配方后运行独立验收。"}]
         for index in range(max_steps):
             write_json(directory / "checks.json", accepted or [])
-            if recipe is None:
-                decision, model = request_json(
-                    SYSTEM_PROMPT,
-                    {
-                        "goal": goal,
-                        "capabilities": tools.catalog(),
-                        "acceptance_checks": accepted,
-                        "recent_steps": context_view(summary["steps"][-6:]),
-                        "last_verification": context_view(summary["verification"]),
-                        "remaining_steps": max_steps - index,
-                    },
-                )
-                summary["model"] = model
-            else:
-                if index >= len(actions):
-                    raise RuntimeError("Recipe exhausted without passing acceptance checks")
-                decision = actions[index]
-            if not isinstance(decision, dict) or not isinstance(decision.get("reason"), str):
-                raise ValueError("Agent decisions require an object and a reason")
-            action = decision.get("action")
-            step = {"action": action, "reason": decision["reason"]}
-            if action == "call":
-                tool = decision.get("tool")
-                if not isinstance(tool, str):
-                    raise ValueError("Tool name is required")
-                if (
-                    tool in {"files.write", "process.run", "browser.run", "http.request"}
-                    and accepted is None
-                ):
-                    raise ValueError(
-                        "Define acceptance checks before actions that may change state"
+            step = {"action": None, "reason": ""}
+            try:
+                if recipe is None:
+                    decision, model = request_json(
+                        SYSTEM_PROMPT,
+                        {
+                            "goal": goal,
+                            "capabilities": tools.catalog(),
+                            "acceptance_checks": accepted,
+                            "recent_steps": context_view(summary["steps"][-6:]),
+                            "last_verification": context_view(summary["verification"]),
+                            "remaining_steps": max_steps - index,
+                        },
                     )
-                observation = tools.call(tool, decision.get("arguments"))
-                step.update(tool=tool, observation=observation)
-                changed = changed or tool == "files.write"
-                # Every action invalidates the previous verification verdict.
-                summary["verification"] = []
-            elif action == "set_checks":
-                if accepted is not None or changed:
-                    raise ValueError("Acceptance checks are immutable once established")
-                accepted = validate_checks(decision.get("checks"), tools)
-                summary["checks_origin"] = "model-proposed"
-                step["observation"] = {"accepted_checks": len(accepted)}
-            elif action == "finish":
-                if not accepted:
-                    raise ValueError("Cannot finish without explicit acceptance checks")
-                summary["verification"] = verify_checks(accepted, tools)
-                step["observation"] = {"verification": summary["verification"]}
-            elif action == "blocked":
-                raise RuntimeError(decision["reason"])
-            else:
-                raise ValueError("Unknown agent action")
+                    summary["model"] = model
+                else:
+                    if index >= len(actions):
+                        raise RuntimeError("Recipe exhausted without passing acceptance checks")
+                    decision = actions[index]
+                if not isinstance(decision, dict) or not isinstance(decision.get("reason"), str):
+                    raise ActionRejected("Agent decisions require an object and a reason")
+                action = decision.get("action")
+                step = {"action": action, "reason": decision["reason"]}
+                if action == "call":
+                    tool = decision.get("tool")
+                    if not isinstance(tool, str):
+                        raise ActionRejected("Tool name is required")
+                    if (
+                        tool in {"files.write", "process.run", "browser.run", "http.request"}
+                        and accepted is None
+                    ):
+                        raise ActionRejected(
+                            "Define acceptance checks before actions that may change state"
+                        )
+                    observation = tools.call(tool, decision.get("arguments"))
+                    step.update(tool=tool, observation=observation)
+                    changed = changed or tool == "files.write"
+                    # Every action invalidates the previous verification verdict.
+                    summary["verification"] = []
+                elif action == "set_checks":
+                    if accepted is not None or changed:
+                        raise ActionRejected("Acceptance checks are immutable once established")
+                    try:
+                        accepted = validate_checks(decision.get("checks"), tools)
+                    except ValueError as error:
+                        raise ActionRejected(str(error)) from None
+                    summary["checks_origin"] = "model-proposed"
+                    step["observation"] = {"accepted_checks": len(accepted)}
+                elif action == "finish":
+                    if not accepted:
+                        raise ActionRejected("Cannot finish without explicit acceptance checks")
+                    summary["verification"] = verify_checks(accepted, tools)
+                    step["observation"] = {"verification": summary["verification"]}
+                elif action == "blocked":
+                    raise RuntimeError(decision["reason"])
+                else:
+                    raise ActionRejected("Unknown agent action")
+            except (ActionRejected, ModelOutputError) as error:
+                if recipe is not None:
+                    raise
+                rejections += 1
+                step = reject(step, error, rejections)
+                summary["steps"].append(step)
+                store.record_event(task_id, "agent.rejected", step)
+                continue
+            rejections = 0
             summary["steps"].append(step)
             store.record_event(task_id, "agent.step", step)
             write_json(directory / "session.json", summary)

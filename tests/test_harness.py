@@ -78,6 +78,7 @@ class HarnessTests(unittest.TestCase):
                 )
             self.assertEqual(result["status"], "blocked")
             self.assertIn("independent tester", result["error"])
+            self.assertEqual([step["attempted"] for step in result["steps"]], ["finish", "finish"])
 
     def test_role_catalogs_enforce_tool_boundaries(self):
         with tempfile.TemporaryDirectory() as temporary:
