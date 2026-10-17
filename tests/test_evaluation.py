@@ -1,13 +1,18 @@
 import json
 import os
+import shlex
+import signal
+import subprocess
+import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from prooflane.evaluation import grade_reproduce, prepare_workspace, run_evaluation
 from prooflane.store import Store
-from prooflane.trials import mutate
+from prooflane.trials import OUTPUT_TAIL, mutate
 
 CASES = Path(__file__).resolve().parents[1] / "evals" / "cases"
 
@@ -21,6 +26,225 @@ class EvaluationTests(unittest.TestCase):
 
     def evaluate(self, names, **options):
         return run_evaluation(CASES, self.store, self.root / "eval", names=names, **options)
+
+    def external_command(self, source, *arguments):
+        script = self.root / "external agent.py"
+        script.write_text(source, encoding="utf-8")
+        return shlex.join([sys.executable, str(script), *map(str, arguments)])
+
+    def test_external_solution_is_scored_and_saved(self):
+        command = self.external_command(
+            "import shutil, sys\nshutil.copytree(sys.argv[1], '.', dirs_exist_ok=True)\n",
+            CASES / "script-logparser" / "grader" / "solution",
+        )
+        summary = self.evaluate(["script-logparser"], mode="external", agent_command=command)
+        self.assertEqual(summary["mode"], "external")
+        self.assertEqual(summary["agent_command"], command)
+        self.assertIsNone(summary["usage"])
+        case = summary["cases"][0]
+        self.assertEqual(case["score"], 1.0, case["grade"])
+        self.assertEqual(case["status"], "completed")
+        self.assertFalse(case["false_completion"])
+        self.assertEqual(case["steps"], 0)
+        self.assertIsNone(case["usage"])
+        self.assertEqual(case["external"]["returncode"], 0)
+        self.assertFalse(case["external"]["timed_out"])
+        self.assertGreater(case["external"]["seconds"], 0)
+        directory = Path(summary["directory"])
+        self.assertEqual(json.loads((directory / "evaluation.json").read_text()), summary)
+        workspace = directory / "script-logparser" / "workspace"
+        self.assertFalse((workspace / "hidden_test.py").exists())
+        self.assertFalse((workspace / "grader").exists())
+
+    def test_external_noop_is_false_completion(self):
+        command = self.external_command("pass\n")
+        summary = self.evaluate(["script-logparser"], mode="external", agent_command=command)
+        case = summary["cases"][0]
+        self.assertEqual(case["status"], "completed")
+        self.assertLess(case["score"], 1.0)
+        self.assertTrue(case["false_completion"])
+        self.assertEqual(summary["false_completions"], 1)
+
+    def test_external_nonzero_exit_is_failed_but_still_graded(self):
+        command = self.external_command(
+            "import sys\nprint('actual failure', file=sys.stderr)\nraise SystemExit(7)\n"
+        )
+        case = self.evaluate(["script-logparser"], mode="external", agent_command=command)["cases"][
+            0
+        ]
+        self.assertEqual(case["status"], "failed")
+        self.assertEqual(case["external"]["returncode"], 7)
+        self.assertFalse(case["external"]["timed_out"])
+        self.assertIn("actual failure", case["external"]["stderr"])
+        self.assertFalse(case["false_completion"])
+        self.assertEqual(len(case["grade"]["tests"]), 9)
+
+    def test_external_reads_goal_and_workspace_without_shell_expansion(self):
+        literal = "$(touch shell-expanded); * | >"
+        command = self.external_command(
+            """import json, os, sys
+from pathlib import Path
+print(json.dumps({
+    'stdin': sys.stdin.read(),
+    'goal': os.environ['PROOFLANE_GOAL'],
+    'workspace': os.environ['PROOFLANE_WORKSPACE'],
+    'cwd': str(Path.cwd()),
+    'argument': sys.argv[1],
+}, ensure_ascii=False))
+""",
+            literal,
+        )
+        summary = self.evaluate(["script-logparser"], mode="external", agent_command=command)
+        observed = json.loads(summary["cases"][0]["external"]["stdout"])
+        goal = json.loads((CASES / "script-logparser" / "case.json").read_text())["goal"]
+        workspace = Path(summary["directory"]) / "script-logparser" / "workspace"
+        self.assertEqual(observed["stdin"], goal)
+        self.assertEqual(observed["goal"], goal)
+        self.assertEqual(observed["workspace"], str(workspace))
+        self.assertEqual(observed["cwd"], str(workspace))
+        self.assertEqual(observed["argument"], literal)
+        self.assertFalse((workspace / "shell-expanded").exists())
+
+    def test_external_keeps_full_logs_and_bounded_tails(self):
+        command = self.external_command(
+            "import os\nos.write(1, b'x' * 20000 + b'OUT\\xff')\n"
+            "os.write(2, b'y' * 20000 + b'ERR\\xff')\n"
+        )
+        case = self.evaluate(["script-logparser"], mode="external", agent_command=command)["cases"][
+            0
+        ]
+        for name, prefix, suffix in [("stdout", b"x", b"OUT\xff"), ("stderr", b"y", b"ERR\xff")]:
+            with self.subTest(stream=name):
+                external = case["external"]
+                path = Path(external[f"{name}_file"])
+                self.assertEqual(path.name, f"{name}.txt")
+                self.assertEqual(path.parent.name, "script-logparser")
+                self.assertEqual(path.read_bytes(), prefix * 20000 + suffix)
+                self.assertLessEqual(len(external[name]), OUTPUT_TAIL)
+                self.assertTrue(external[name].endswith(suffix.decode("utf-8", errors="replace")))
+
+    def external_with_child(self, *, exit_immediately):
+        child = self.root / "child.py"
+        child.write_text(
+            """import time
+from pathlib import Path
+while True:
+    with Path('heartbeat').open('ab') as stream:
+        stream.write(b'.')
+    time.sleep(0.01)
+"""
+        )
+        command = self.external_command(
+            """import os, subprocess, sys, time
+from pathlib import Path
+subprocess.Popen([sys.executable, sys.argv[1]])
+while not Path('heartbeat').exists():
+    time.sleep(0.01)
+print(os.getpid(), flush=True)
+if sys.argv[2] == 'wait':
+    time.sleep(60)
+""",
+            child,
+            "exit" if exit_immediately else "wait",
+        )
+        summary = self.evaluate(
+            ["script-logparser"], mode="external", agent_command=command, agent_timeout=1
+        )
+        case = summary["cases"][0]
+        pid = int(case["external"]["stdout"])
+
+        def cleanup():
+            try:
+                os.killpg(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+        self.addCleanup(cleanup)
+        with self.assertRaises(ProcessLookupError):
+            os.kill(pid, 0)
+        heartbeat = Path(summary["directory"]) / "script-logparser" / "workspace" / "heartbeat"
+        before = heartbeat.read_bytes()
+        self.assertTrue(before)
+        time.sleep(0.1)
+        self.assertEqual(
+            heartbeat.read_bytes(), before, "Descendant survived process-group cleanup"
+        )
+        return case
+
+    def test_external_timeout_terminates_agent_and_descendants(self):
+        case = self.external_with_child(exit_immediately=False)
+        self.assertEqual(case["status"], "timeout")
+        self.assertTrue(case["external"]["timed_out"])
+        self.assertEqual(case["external"]["returncode"], -signal.SIGKILL)
+        self.assertGreaterEqual(case["external"]["seconds"], 1)
+        self.assertLess(case["external"]["seconds"], 5)
+        self.assertFalse(case["false_completion"])
+        self.assertEqual(len(case["grade"]["tests"]), 9)
+
+    def test_external_completion_cleans_up_descendants(self):
+        case = self.external_with_child(exit_immediately=True)
+        self.assertEqual(case["status"], "completed")
+        self.assertEqual(case["external"]["returncode"], 0)
+        self.assertFalse(case["external"]["timed_out"])
+
+    def test_external_missing_executable_is_failed_and_graded(self):
+        command = shlex.quote(str(self.root / "missing agent"))
+        case = self.evaluate(["script-logparser"], mode="external", agent_command=command)["cases"][
+            0
+        ]
+        self.assertEqual(case["status"], "failed")
+        self.assertIsNone(case["external"]["returncode"])
+        self.assertIn("missing agent", case["error"])
+        self.assertEqual(len(case["grade"]["tests"]), 9)
+
+    def test_external_invalid_options_are_rejected_before_execution(self):
+        options = [
+            {},
+            {"agent_command": ""},
+            {"agent_command": "   "},
+            {"agent_command": "'unclosed"},
+            *[
+                {"agent_command": "unused", "agent_timeout": value}
+                for value in [0, -1, float("nan"), float("inf")]
+            ],
+        ]
+        for option in options:
+            with self.subTest(option=option), self.assertRaises(ValueError):
+                self.evaluate(["script-logparser"], mode="external", **option)
+        self.assertFalse((self.root / "eval").exists())
+
+    def test_external_cli_runs_agent_and_requires_command(self):
+        base = [sys.executable, "-m", "prooflane", "--db", str(self.root / "cli.db"), "eval"]
+        missing = subprocess.run([*base, "--mode", "external"], capture_output=True, text=True)
+        self.assertEqual(missing.returncode, 2)
+        self.assertIn("requires --agent-command", missing.stderr)
+        command = self.external_command("print('cli agent')\n")
+        completed = subprocess.run(
+            [
+                *base,
+                "--mode",
+                "external",
+                "--agent-command",
+                command,
+                "--agent-timeout",
+                "2",
+                "--case",
+                "script-logparser",
+                "--cases",
+                str(CASES),
+                "--output",
+                str(self.root / "cli eval"),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        result = json.loads(completed.stdout)
+        summary = json.loads(Path(result["details"]).read_text())
+        self.assertEqual(summary["agent_command"], command)
+        self.assertEqual(summary["cases"][0]["status"], "completed")
+        self.assertEqual(summary["cases"][0]["external"]["stdout"], "cli agent\n")
 
     def grade_reproduction(self, suite=None, *, without_decoys=False):
         case_dir = CASES / "reproduce-pagination"

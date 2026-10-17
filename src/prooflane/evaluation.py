@@ -1,7 +1,12 @@
 """Score testing and automation agents on seeded cases with graders hidden from the agent."""
 
 import json
+import math
+import os
+import shlex
 import shutil
+import signal
+import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -12,9 +17,10 @@ from prooflane.harness import run_harness
 from prooflane.models import usage_snapshot
 from prooflane.store import Store
 from prooflane.tools import ToolPolicy
-from prooflane.trials import COPY_IGNORE, mutate, run_trial
+from prooflane.trials import COPY_IGNORE, OUTPUT_TAIL, mutate, run_trial
 
 RUNNERS = {"harness": run_harness, "agent": run_agent}
+DEFAULT_AGENT_TIMEOUT = 1800
 
 
 def prepare_workspace(case_dir: Path, grading: dict, destination: Path) -> Path:
@@ -133,7 +139,81 @@ def grade_hidden(case_dir: Path, grading: dict, workspace: Path) -> dict:
 GRADERS = {"mutation": grade_mutation, "reproduce": grade_reproduce, "hidden": grade_hidden}
 
 
-def run_case(case_dir: Path, store: Store, output: Path, *, mode: str, reference: bool) -> dict:
+def run_external(
+    goal: str, policy: ToolPolicy, directory: Path, argv: list[str], timeout: float
+) -> dict:
+    # The external agent runs outside Prooflane's tool policy, so allow_process does not apply.
+    if os.name != "posix":
+        raise ValueError("Managed process execution currently supports macOS/Linux")
+    workspace = policy.workspace.resolve()
+    environment = {
+        **os.environ,
+        "PROOFLANE_GOAL": goal,
+        "PROOFLANE_WORKSPACE": str(workspace),
+    }
+    logs = {name: directory / f"{name}.txt" for name in ("stdout", "stderr")}
+    started = time.monotonic()
+    timed_out = False
+    returncode = None
+    error = None
+    with logs["stdout"].open("wb") as stdout, logs["stderr"].open("wb") as stderr:
+        try:
+            process = subprocess.Popen(
+                argv,
+                cwd=workspace,
+                env=environment,
+                stdin=subprocess.PIPE,
+                stdout=stdout,
+                stderr=stderr,
+                start_new_session=True,
+            )
+        except OSError as exc:
+            error = str(exc)
+        else:
+            try:
+                process.communicate(goal.encode("utf-8"), timeout=timeout)
+            except subprocess.TimeoutExpired:
+                timed_out = True
+                error = f"External agent timed out after {timeout} seconds"
+            finally:
+                # Include descendants even when the agent exits before its children.
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.wait(timeout=3)
+                process.stdin.close()
+            returncode = process.returncode
+    external = {
+        "argv": argv,
+        "returncode": returncode,
+        "seconds": round(time.monotonic() - started, 3),
+        "timed_out": timed_out,
+    }
+    for name, path in logs.items():
+        with path.open("rb") as stream:
+            stream.seek(max(0, path.stat().st_size - OUTPUT_TAIL))
+            external[name] = stream.read(OUTPUT_TAIL).decode("utf-8", errors="replace")
+        external[f"{name}_file"] = str(path)
+    return {
+        "status": "timeout" if timed_out else "completed" if returncode == 0 else "failed",
+        "error": error,
+        "steps": [],
+        "report": None,
+        "external": external,
+    }
+
+
+def run_case(
+    case_dir: Path,
+    store: Store,
+    output: Path,
+    *,
+    mode: str,
+    reference: bool,
+    agent_argv: list[str] | None = None,
+    agent_timeout: float = DEFAULT_AGENT_TIMEOUT,
+) -> dict:
     case = json.loads((case_dir / "case.json").read_text(encoding="utf-8"))
     case_output = output / case_dir.name
     workspace = prepare_workspace(case_dir, case["grading"], case_output / "workspace")
@@ -144,11 +224,14 @@ def run_case(case_dir: Path, store: Store, output: Path, *, mode: str, reference
         run = {"status": "reference-solution", "error": None, "steps": [], "report": None}
     else:
         policy = ToolPolicy(workspace, allow_process=case["allow_process"])
-        run = RUNNERS[mode](
-            store, case["goal"], policy, case_output / "runs", max_steps=case["max_steps"]
-        )
+        if mode == "external":
+            run = run_external(case["goal"], policy, case_output, agent_argv, agent_timeout)
+        else:
+            run = RUNNERS[mode](
+                store, case["goal"], policy, case_output / "runs", max_steps=case["max_steps"]
+            )
     grade = GRADERS[case["grading"]["kind"]](case_dir, case["grading"], workspace)
-    return {
+    result = {
         "case": case_dir.name,
         "battleground": case["battleground"],
         "status": run["status"],
@@ -162,6 +245,9 @@ def run_case(case_dir: Path, store: Store, output: Path, *, mode: str, reference
         "false_completion": run["status"] == "completed" and grade["score"] < 1,
         "grade": grade,
     }
+    if "external" in run:
+        result["external"] = run["external"]
+    return result
 
 
 def run_evaluation(
@@ -172,7 +258,16 @@ def run_evaluation(
     names: list[str] | None = None,
     mode: str = "harness",
     reference: bool = False,
+    agent_command: str | None = None,
+    agent_timeout: float = DEFAULT_AGENT_TIMEOUT,
 ) -> dict:
+    agent_argv = None
+    if mode == "external":
+        agent_argv = shlex.split(agent_command or "")
+        if not agent_argv:
+            raise ValueError("External mode requires a nonempty --agent-command")
+        if not math.isfinite(agent_timeout) or agent_timeout <= 0:
+            raise ValueError("--agent-timeout must be a positive, finite number of seconds")
     case_dirs = sorted(path.parent for path in cases_root.glob("*/case.json"))
     if names:
         unknown = set(names) - {path.name for path in case_dirs}
@@ -181,7 +276,15 @@ def run_evaluation(
         case_dirs = [path for path in case_dirs if path.name in names]
     directory = output.resolve() / time.strftime("%Y%m%d-%H%M%S")
     results = [
-        run_case(case_dir, store, directory, mode=mode, reference=reference)
+        run_case(
+            case_dir,
+            store,
+            directory,
+            mode=mode,
+            reference=reference,
+            agent_argv=agent_argv,
+            agent_timeout=agent_timeout,
+        )
         for case_dir in case_dirs
     ]
     summary = {
@@ -195,5 +298,8 @@ def run_evaluation(
         },
         "cases": results,
     }
+    if mode == "external" and not reference:
+        summary["agent_command"] = agent_command
+        summary["usage"] = None
     write_json(directory / "evaluation.json", summary)
     return summary

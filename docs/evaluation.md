@@ -33,6 +33,24 @@ uv run prooflane eval --reference          # 用内置参考答案验证用例�
 
 所有评分都在 Agent 工作区的副本上运行，Agent 对被测对象的改动不影响评分。
 
+## 与其他 Agent 对比
+
+`external` 模式让命令行 Agent 在相同用例上工作，随后复用相同的隐藏评分器：
+
+```sh
+uv run prooflane eval --mode external --agent-command "codex exec --skip-git-repo-check -s workspace-write -"
+# 只比较指定用例，并设置每例超时（秒，默认 1800）
+uv run prooflane eval --mode external --case script-logparser --agent-timeout 300 --agent-command "python /absolute/path/to/agent.py"
+```
+
+`--agent-command` 必填，使用 `shlex.split` 解析为参数列表，不经过 shell；路径带空格时需在命令字符串内加引号，管道和重定向不会展开。每例先准备工作区，再以该目录为当前目录启动命令。目标原文通过 stdin 传入，并同时设置 `PROOFLANE_GOAL`（目标文本）和 `PROOFLANE_WORKSPACE`（工作区绝对路径）。
+
+外部 Agent 继承当前环境，以当前用户权限运行，**不是沙箱**；工作目录不构成文件访问边界。进程管理与现有工具一样支持 macOS/Linux；用例的 `allow_process` 只约束万测王自己的工具，不约束外部 Agent；超时或命令退出后清理本次进程组。评分只观察最终工作区，不依赖 Agent 内部实现。
+
+退出码 0 记为 `completed`，非 0 或启动失败记为 `failed`，超时记为 `timeout`；即使失败或超时也继续评分。`completed` 但评分不足 1 仍记为 `false_completion`。外部执行的 `steps` 为 0，`usage`（包括汇总）为 `null`。
+
+每例目录保留完整的 `stdout.txt`、`stderr.txt`。结果 JSON 的 `external` 字段记录 argv、退出码（`returncode`）、执行耗时（`seconds`，不含评分）、是否超时（`timed_out`）、日志路径，以及各日志最多最后 3000 字节的 UTF-8 解码文本；汇总记录 `mode: external` 和原样的 `agent_command`。比较时应选择同一批用例，并记录各 Agent 使用的模型、版本和超时配置。
+
 ## 当前限制
 
 - 用例数量少，适合发现明显短板和比较改动前后的差异，不足以支撑统计意义上的能力结论。

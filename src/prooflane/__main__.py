@@ -4,7 +4,7 @@ from pathlib import Path
 
 from .agent import run_agent
 from .dispatcher import STAGES, run_task
-from .evaluation import run_evaluation
+from .evaluation import DEFAULT_AGENT_TIMEOUT, run_evaluation
 from .harness import run_harness
 from .models import list_models
 from .store import Store
@@ -78,12 +78,23 @@ def main() -> int:
     )
     evaluation.add_argument("--cases", type=Path, default=Path("evals/cases"))
     evaluation.add_argument("--case", action="append", help="Case directory name; repeat as needed")
-    evaluation.add_argument("--mode", choices=["harness", "agent"], default="harness")
+    evaluation.add_argument("--mode", choices=["harness", "agent", "external"], default="harness")
+    evaluation.add_argument(
+        "--agent-command", help="External agent command, split into argv without a shell"
+    )
+    evaluation.add_argument(
+        "--agent-timeout",
+        type=float,
+        default=DEFAULT_AGENT_TIMEOUT,
+        help="Seconds per external case",
+    )
     evaluation.add_argument(
         "--reference", action="store_true", help="Grade bundled reference answers to validate cases"
     )
     evaluation.add_argument("--output", type=Path, default=Path(".prooflane/eval-runs"))
     args = parser.parse_args()
+    if args.command == "eval" and args.mode == "external" and not args.agent_command:
+        parser.error("--mode external requires --agent-command")
     store = Store(args.db)
     if args.command == "init":
         print(json.dumps({"database": args.db}))
@@ -103,6 +114,8 @@ def main() -> int:
             names=args.case,
             mode=args.mode,
             reference=args.reference,
+            agent_command=args.agent_command,
+            agent_timeout=args.agent_timeout,
         )
         rows = [
             {key: case[key] for key in ["case", "status", "score", "false_completion", "steps"]}
