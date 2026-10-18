@@ -1,0 +1,18 @@
+{
+  "title": "按折后金额计算订单运费",
+  "battleground": "script",
+  "goal": "根据 requirements.md 实现 shipping.py 的 shipping_fee 函数，运行自测后交付。",
+  "allow_process": true,
+  "max_steps": 1,
+  "grading": {
+    "kind": "hidden",
+    "tests_file": "hidden_test.py",
+    "tests": [
+      "hidden_test.ShippingAcceptance.test_ordinary_orders",
+      "hidden_test.ShippingAcceptance.test_free_shipping_boundary",
+      "hidden_test.ShippingAcceptance.test_empty_order",
+      "hidden_test.ShippingAcceptance.test_discount_affects_shipping",
+      "hidden_test.ShippingAcceptance.test_invalid_amounts"
+    ]
+  }
+}
