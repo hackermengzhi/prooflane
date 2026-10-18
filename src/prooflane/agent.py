@@ -293,10 +293,13 @@ def run_agent(
                     if index >= len(actions):
                         raise RuntimeError("Recipe exhausted without passing acceptance checks")
                     decision = actions[index]
-                if not isinstance(decision, dict) or not isinstance(decision.get("reason"), str):
-                    raise ActionRejected("Agent decisions require an object and a reason")
+                if not isinstance(decision, dict):
+                    raise ActionRejected("Agent decisions must be a JSON object")
                 action = decision.get("action")
-                step = {"action": action, "reason": decision["reason"]}
+                # A reason is kept for the audit trail but optional; default it rather than
+                # discard an otherwise usable decision when the model omits it.
+                reason = decision["reason"] if isinstance(decision.get("reason"), str) else ""
+                step = {"action": action, "reason": reason}
                 if action == "call":
                     tool = decision.get("tool")
                     if not isinstance(tool, str):
@@ -330,7 +333,7 @@ def run_agent(
                     summary["verification"] = verify_checks(accepted, tools)
                     step["observation"] = {"verification": summary["verification"]}
                 elif action == "blocked":
-                    raise RuntimeError(decision["reason"])
+                    raise RuntimeError(reason or "blocked without a stated reason")
                 else:
                     raise ActionRejected("Unknown agent action")
             except (ActionRejected, ModelOutputError) as error:

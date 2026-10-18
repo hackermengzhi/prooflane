@@ -268,12 +268,14 @@ def run_harness(
                     },
                 )
                 action = decision.get("action")
-                if not isinstance(decision.get("reason"), str):
-                    raise ActionRejected("Role decision requires a reason")
+                # A reason is recorded for the audit trail but is optional: a model that
+                # omits it still produces a usable decision, so default to an empty string
+                # rather than abandoning the whole run.
+                reason = decision["reason"] if isinstance(decision.get("reason"), str) else ""
                 step = {
                     "role": active,
                     "action": action,
-                    "reason": decision["reason"],
+                    "reason": reason,
                     "model": model,
                 }
                 if active == "leader":
@@ -298,7 +300,7 @@ def run_harness(
                             )
                         summary["status"] = "completed"
                     elif action == "blocked":
-                        raise RuntimeError(decision["reason"])
+                        raise RuntimeError(reason or "blocked without a stated reason")
                     else:
                         raise ActionRejected(
                             "Leader must delegate rather than execute specialist tools"
@@ -344,7 +346,7 @@ def run_harness(
                     active, assignment = "leader", goal
                 elif action == "blocked":
                     # Specialist blockers return to the leader for reassignment or clarification.
-                    step["observation"] = {"blocker": decision["reason"]}
+                    step["observation"] = {"blocker": reason or "blocked without a stated reason"}
                     active, assignment = "leader", goal
                 else:
                     raise ActionRejected("Action is not available to this role")
