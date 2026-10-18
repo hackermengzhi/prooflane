@@ -80,6 +80,36 @@ class HarnessTests(unittest.TestCase):
             self.assertIn("independent tester", result["error"])
             self.assertEqual([step["attempted"] for step in result["steps"]], ["finish", "finish"])
 
+    def test_stuck_specialist_returns_to_leader_instead_of_aborting(self):
+        # Leader delegates to the tester, who keeps choosing an action it is not allowed;
+        # the run must hand control back to the leader rather than dying outright.
+        decisions = [
+            {"action": "delegate", "role": "tester", "task": "verify"},
+            {"action": "finish"},
+            {"action": "finish"},
+            {"action": "finish"},
+            {"action": "blocked"},
+        ]
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            with patch(
+                "prooflane.harness.request_json",
+                side_effect=[({**d, "reason": "r"}, "stub") for d in decisions],
+            ):
+                result = run_harness(
+                    Store(str(root / "state.db")),
+                    "Do work",
+                    ToolPolicy(root),
+                    root / "runs",
+                    max_steps=20,
+                )
+            roles = [step["role"] for step in result["steps"]]
+            # The tester got stuck but the run was not killed by the contract-abort;
+            # control returned to the leader, whose own "blocked" ended the run.
+            self.assertIn("tester", roles)
+            self.assertNotIn("3 times in a row", str(result["error"]))
+            self.assertEqual(result["error"], "RuntimeError: r")
+
     def test_role_catalogs_enforce_tool_boundaries(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

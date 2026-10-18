@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from prooflane.agent import (
+    MAX_CONSECUTIVE_REJECTIONS,
     RESUME_GUIDE,
     ActionRejected,
     reject,
@@ -352,6 +353,15 @@ def run_harness(
                     raise ActionRejected("Action is not available to this role")
             except (ActionRejected, ModelOutputError) as error:
                 rejections += 1
+                if rejections >= MAX_CONSECUTIVE_REJECTIONS and active != "leader":
+                    # A specialist stuck breaking the contract returns control to the
+                    # leader for reassignment instead of ending the whole run.
+                    step.update(action="rejected", observation={"blocker": f"{active}: {error}"})
+                    summary["steps"].append(step)
+                    store.record_event(task_id, "harness.reassigned", step)
+                    active, assignment = "leader", goal
+                    rejections = 0
+                    continue
                 step = reject(step, error, rejections)
                 summary["steps"].append(step)
                 store.record_event(task_id, "harness.rejected", step)
