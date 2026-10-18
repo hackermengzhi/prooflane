@@ -2,6 +2,8 @@
   <img src="docs/assets/mascot.svg" width="200" alt="Prooflane mascot: Xiaoxiao, a little owl holding a magnifying glass">
 </p>
 
+<p align="center"><strong>English</strong> · <a href="README.zh-CN.md">中文</a></p>
+
 <h1 align="center">Prooflane · 万测王</h1>
 
 <p align="center"><strong>An agent that writes tests and automation scripts, and backs every conclusion with evidence.</strong></p>
