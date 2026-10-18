@@ -10,6 +10,7 @@ from .harness import run_harness
 from .models import list_models
 from .resume import run_sessions
 from .store import Store
+from .swebench import DEFAULT_INSTANCES, load_instances, run_swebench
 from .tools import ToolPolicy
 
 
@@ -129,7 +130,24 @@ def main() -> int:
     evaluation.add_argument(
         "--sessions", type=int, default=1, help="Split each case's step budget across sessions"
     )
+    swebench = commands.add_parser(
+        "swebench", help="Generate SWE-bench patches without running tests"
+    )
+    swebench.add_argument("--instances", type=Path, default=DEFAULT_INSTANCES)
+    swebench.add_argument("--out", type=Path, required=True, help="Official prediction JSONL path")
+    swebench.add_argument("--limit", type=int, help="Maximum number of instances")
+    swebench.add_argument("--output", type=Path, default=Path(".prooflane/swebench-runs"))
     args = parser.parse_args()
+    if args.command == "swebench":
+        if args.limit is not None and args.limit < 1:
+            parser.error("--limit must be positive")
+        try:
+            instances = load_instances(args.instances)
+            result = run_swebench(instances[: args.limit], args.output, args.out)
+        except (OSError, ValueError) as error:
+            parser.error(str(error))
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 2 if result["failed"] else 0
     if args.command == "eval-compare":
         if len(args.runs) < 2:
             parser.error("eval-compare requires at least two evaluation.json paths")
