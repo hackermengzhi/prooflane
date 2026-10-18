@@ -8,10 +8,10 @@ from urllib.request import urlopen
 
 from prooflane.artifacts import digest
 from prooflane.demo import service
+from prooflane.demo.closed_loop import run_closed_loop
 from prooflane.execution import HttpClient, snapshot
 from prooflane.process import checkout_service
 from prooflane.store import Store
-from prooflane.workflow import run_closed_loop
 
 REQUIREMENTS = Path(service.__file__).with_name("requirements.md")
 
