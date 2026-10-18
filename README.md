@@ -152,7 +152,7 @@ Developer and tester roles can call LLDB, GDB and Frida adapters, plus a Cheat E
 
 **Implemented**: role-based harness, general agent tool loop, hidden-grader eval suite, Responses/Chat model integration (with retries and model listing), the full checkout-and-payment loop, stage-based dispatch and evidence reuse, long-task resumption with a cross-session notebook. Every model-driven flow is currently tested with contract stubs plus real tools.
 
-**Not yet implemented**: real-model eval scores, an execution sandbox, reaping orphaned processes after a crash, RAG, OCR, desktop control, parallel multi-agent runs, a web workbench. See the [roadmap](docs/roadmap.md) and [architecture](docs/architecture.md).
+**Not yet implemented**: real-model eval scores, an execution sandbox, reaping crash orphans outside `process.run`, RAG, OCR, desktop control, parallel multi-agent runs, a web workbench. See the [roadmap](docs/roadmap.md) and [architecture](docs/architecture.md).
 
 ## Contributing
 

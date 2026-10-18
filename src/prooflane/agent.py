@@ -80,6 +80,8 @@ def resume_context(
         "recent_steps": context_view(session["steps"][-window:]),
         # Unknown (None) when the earlier session crashed before recording its final snapshot.
         "workspace_changes": workspace_changes(session["snapshot"], fingerprint(workspace)),
+        # Commands the crashed session left running, and whether a resume could stop them.
+        "process_groups": session["process_groups"],
         **inherited,
     }
     store.record_event(
@@ -227,7 +229,13 @@ def run_agent(
         store.transition(
             task_id,
             "active",
-            {"engine": engine, "goal": goal, "workspace": summary["workspace"], "owner": owner()},
+            {
+                "engine": engine,
+                "goal": goal,
+                "workspace": summary["workspace"],
+                "owner": owner(),
+                "evidence": str(directory),
+            },
         )
         if type(max_steps) is not int or not 1 <= max_steps <= 50:
             raise ValueError("max_steps must be 1..50")

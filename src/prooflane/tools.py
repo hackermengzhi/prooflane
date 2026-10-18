@@ -18,6 +18,7 @@ from prooflane.debugging import capabilities, run_debugger
 from prooflane.environment import snapshot
 from prooflane.flaky import check_flaky
 from prooflane.models import NoRedirect
+from prooflane.orphans import record_group
 from prooflane.reverse import identify_artifact, inspect_strings
 from prooflane.selfcheck import check_mutations
 
@@ -351,7 +352,10 @@ class Tools:
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
             )
+            group = None
             try:
+                # If this session is killed, finally never runs; a resume uses the record instead.
+                group = record_group(directory, process.pid, argv)
                 deadline = time.monotonic() + timeout
                 while process.poll() is None:
                     if time.monotonic() >= deadline:
@@ -368,6 +372,8 @@ class Tools:
                 except ProcessLookupError:
                     pass
                 process.wait(timeout=3)
+                if group:
+                    group.unlink()
         with output.open("rb") as stream:
             captured = stream.read(MAX_OUTPUT_BYTES)
         if output.stat().st_size > MAX_OUTPUT_BYTES:

@@ -220,7 +220,13 @@ def run_harness(
         store.transition(
             task_id,
             "active",
-            {"engine": ENGINE, "goal": goal, "workspace": workspace, "owner": owner()},
+            {
+                "engine": ENGINE,
+                "goal": goal,
+                "workspace": workspace,
+                "owner": owner(),
+                "evidence": str(directory),
+            },
         )
         if type(max_steps) is not int or not 1 <= max_steps <= 100:
             raise ValueError("Harness step budget must be 1..100")

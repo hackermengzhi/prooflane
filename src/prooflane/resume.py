@@ -4,6 +4,7 @@ import os
 import socket
 from pathlib import Path
 
+from prooflane.orphans import reap_groups
 from prooflane.store import Store
 
 # Completed and failed tasks reached a verdict; active ones resume only once their owner exited.
@@ -26,15 +27,22 @@ def owner_alive(pid: int) -> bool:
     return True
 
 
-def abandon(store: Store, task_id: str, recorded: dict | None) -> None:
+def abandon(store: Store, task_id: str, start: dict) -> None:
     """Close an active task whose recorded owner process no longer exists on this host.
 
     A reused process id keeps the task active, which refuses a resume rather than risking two
-    sessions on one workspace.
+    sessions on one workspace. Process groups the owner left running are stopped first.
     """
+    recorded = start.get("owner")
     if not recorded or recorded["host"] != socket.gethostname() or owner_alive(recorded["pid"]):
         raise ValueError("Task is still active or its owner cannot be confirmed to have exited")
-    store.transition(task_id, "blocked", {"error": "Owner process exited without closing the task"})
+    # Tasks recorded before run directories were noted have no process group records to check.
+    groups = reap_groups(Path(start["evidence"])) if "evidence" in start else []
+    store.transition(
+        task_id,
+        "blocked",
+        {"error": "Owner process exited without closing the task", "process_groups": groups},
+    )
 
 
 def load_session(
@@ -59,12 +67,13 @@ def load_session(
     if start.get("engine") != engine or start.get("workspace") != str(workspace.resolve()):
         raise ValueError("Interrupted task was not recorded for this engine and workspace")
     if task["status"] == "active":
-        abandon(store, task_id, start.get("owner"))
+        abandon(store, task_id, start)
         events = store.events(task_id)
     session = {
         "task_id": task_id,
         "goal": task["title"],
         "error": events[-1]["detail"].get("error"),
+        "process_groups": events[-1]["detail"].get("process_groups", []),
         "checks": None,
         "checks_origin": None,
         "inherited": {},

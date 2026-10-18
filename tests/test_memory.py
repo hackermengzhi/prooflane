@@ -1,16 +1,21 @@
+import json
 import os
+import signal
 import socket
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import prooflane
 from prooflane.agent import run_agent
 from prooflane.evaluation import run_evaluation
 from prooflane.harness import run_harness
 from prooflane.memory import HISTORY_LIMIT, fingerprint, history_view, workspace_changes
+from prooflane.orphans import RECORD_NAME
 from prooflane.resume import run_sessions
 from prooflane.store import Store
 from prooflane.tools import ToolPolicy
@@ -183,8 +188,34 @@ class HistoryTests(MemoryTestCase):
         self.assertEqual(result["steps"][2]["observation"]["data"]["evidence"]["status"], "passed")
 
 
+# A session that starts a long command through process.run and is then killed with SIGKILL.
+CRASHING_SESSION = """
+import sys
+from pathlib import Path
+from prooflane.tools import ToolPolicy, Tools
+tools = Tools(ToolPolicy(Path(sys.argv[1]), allow_process=True), Path(sys.argv[2]) / "tools")
+tools.call("process.run", {"argv": ["sleep", "60"], "timeout": 60})
+"""
+
+
+def wait_until(condition, seconds=10):
+    deadline = time.monotonic() + seconds
+    while not condition():
+        if time.monotonic() >= deadline:
+            raise AssertionError("Condition not reached in time")
+        time.sleep(0.02)
+
+
+def group_running(pgid):
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
 class CrashRecoveryTests(MemoryTestCase):
-    def crashed_task(self, pid, host=None):
+    def crashed_task(self, pid, host=None, evidence=None):
         task_id = self.store.create("Investigate")
         detail = {
             "engine": "llm",
@@ -192,6 +223,8 @@ class CrashRecoveryTests(MemoryTestCase):
             "workspace": str(self.workspace.resolve()),
             "owner": {"pid": pid, "host": host or socket.gethostname()},
         }
+        if evidence:
+            detail["evidence"] = str(evidence)
         self.store.transition(task_id, "active", detail)
         self.store.record_event(
             task_id, "agent.step", {"action": "call", "tool": "files.read", "reason": "look"}
@@ -210,6 +243,55 @@ class CrashRecoveryTests(MemoryTestCase):
         self.assertEqual(previous["recent_steps"][0]["tool"], "files.read")
         # The crash left no final snapshot, so changes since then are unknown.
         self.assertIsNone(previous["workspace_changes"])
+
+    def test_resume_stops_the_process_group_a_killed_session_left_running(self):
+        evidence = self.root / "crashed-run"
+        environment = {**os.environ, "PYTHONPATH": str(Path(prooflane.__file__).parents[1])}
+        session = subprocess.Popen(
+            [sys.executable, "-c", CRASHING_SESSION, str(self.workspace), str(evidence)],
+            env=environment,
+        )
+        record = evidence / "tools" / "001" / RECORD_NAME
+        wait_until(record.exists)
+        pgid = json.loads(record.read_text())["pgid"]
+        self.addCleanup(lambda: group_running(pgid) and os.killpg(pgid, signal.SIGKILL))
+        session.kill()
+        session.wait()
+        # The session never reached its cleanup, so its command is still running.
+        self.assertTrue(group_running(pgid))
+        task_id = self.crashed_task(session.pid, evidence=evidence)
+        _, payloads = self.agent([{"action": "blocked"}], goal=None, resume=task_id)
+        wait_until(lambda: not group_running(pgid))
+        self.assertEqual(
+            payloads[0]["previous_session"]["process_groups"],
+            [{"pgid": pgid, "argv": ["sleep", "60"], "outcome": "stopped"}],
+        )
+
+    def test_resume_leaves_a_reused_process_group_id_alone(self):
+        unrelated = subprocess.Popen(["sleep", "60"], start_new_session=True)
+        self.addCleanup(unrelated.wait)
+        self.addCleanup(unrelated.kill)
+        evidence = self.root / "crashed-run"
+        record = evidence / "tools" / "001" / RECORD_NAME
+        record.parent.mkdir(parents=True)
+        # Same group id as the recorded command, but the process started at another time.
+        started = "Thu Jan  1 00:00:00 1970"
+        record.write_text(
+            json.dumps({"pgid": unrelated.pid, "argv": ["sleep"], "started": started})
+        )
+        exited = subprocess.Popen([sys.executable, "-c", "pass"])
+        exited.wait()
+        task_id = self.crashed_task(exited.pid, evidence=evidence)
+        _, payloads = self.agent([{"action": "blocked"}], goal=None, resume=task_id)
+        self.assertIsNone(unrelated.poll())
+        self.assertEqual(
+            payloads[0]["previous_session"]["process_groups"],
+            [{"pgid": unrelated.pid, "argv": ["sleep"], "outcome": "not_verified"}],
+        )
+
+    def test_finished_command_leaves_no_process_group_record(self):
+        self.agent([call("process.run", argv=["sleep", "0.2"]), {"action": "blocked"}])
+        self.assertEqual(list((self.root / "runs").rglob(RECORD_NAME)), [])
 
     def test_task_with_a_possibly_live_owner_is_not_resumed(self):
         for task_id in [self.crashed_task(os.getpid()), self.crashed_task(1, "elsewhere")]:
