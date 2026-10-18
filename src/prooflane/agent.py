@@ -327,7 +327,7 @@ def run_agent(
                         task_id, "checks.accepted", {"origin": "model-proposed", "checks": accepted}
                     )
                     step["observation"] = {"accepted_checks": len(accepted)}
-                elif action == "finish":
+                elif action == "finish" or (action == "blocked" and accepted):
                     if not accepted:
                         raise ActionRejected("Cannot finish without explicit acceptance checks")
                     summary["verification"] = verify_checks(accepted, tools)
@@ -361,11 +361,13 @@ def run_agent(
             summary["steps"].append(step)
             store.record_event(task_id, "agent.step", step)
             write_json(directory / "session.json", summary)
-            if action == "finish" and all(
+            if action in {"finish", "blocked"} and all(
                 result["status"] == "passed" for result in summary["verification"]
             ):
                 summary["status"] = "completed"
                 break
+            if action == "blocked":
+                raise RuntimeError(reason or "blocked without a stated reason")
             if (
                 recipe is not None
                 and action == "call"
