@@ -6,8 +6,15 @@ from pathlib import Path
 
 from prooflane.artifacts import manifest, write_json
 from prooflane.models import ModelOutputError, request_json, usage_since, usage_snapshot
+from prooflane.resume import load_session
 from prooflane.store import Store
 from prooflane.tools import FILE_CHANGING_TOOLS, STATE_CHANGING_TOOLS, ToolPolicy, Tools
+
+RESUME_GUIDE = (
+    "previous_session, when present, summarizes an interrupted earlier session of this task. "
+    "Its steps are leads that save repeated research, not current evidence: recheck the "
+    "workspace before relying on them, and its verification no longer counts."
+)
 
 SYSTEM_PROMPT = (
     "You are Prooflane's general testing and automation dispatcher. Work toward the user's goal "
@@ -22,13 +29,16 @@ SYSTEM_PROMPT = (
     "when enabled. $PYTHON in argv means the current interpreter. A finish request always invokes the "
     "acceptance checks; failed checks are observations to investigate and repair. Never invent results. "
     "You can work on API tests, browser automation, local scripts, repository analysis and other domains. "
-    "Use screenshot artifacts and DOM observations where available; do not claim OCR or desktop input tools."
+    "Use screenshot artifacts and DOM observations where available; do not claim OCR or desktop input tools. "
+    + RESUME_GUIDE
 )
 
 # Large enough for a typical source file or test log, small enough to bound repeated context.
 CONTEXT_TEXT_LIMIT = 10_000
 # A model gets this many consecutive chances to correct malformed or disallowed decisions.
 MAX_CONSECUTIVE_REJECTIONS = 3
+# Steps of history the model sees each turn, including those inherited by a resumed session.
+RECENT_STEPS = 6
 
 
 class ActionRejected(ValueError):
@@ -63,6 +73,22 @@ def context_view(value):
     if isinstance(value, dict):
         return {key: context_view(item) for key, item in list(value.items())[:40]}
     return value
+
+
+def resume_context(store: Store, task_id: str, session: dict, window: int, **inherited) -> dict:
+    """Record what a resumed session inherits and return the bounded view the model receives."""
+    previous = {
+        "task_id": session["task_id"],
+        "error": session["error"],
+        "recent_steps": context_view(session["steps"][-window:]),
+        **inherited,
+    }
+    store.record_event(
+        task_id,
+        "session.resumed",
+        {"resumed_from": session["task_id"], "prior_steps": previous["recent_steps"], **inherited},
+    )
+    return previous
 
 
 def validate_checks(checks: list, tools: Tools) -> list:
@@ -144,6 +170,7 @@ def report_agent(directory: Path, summary: dict) -> Path:
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Prooflane · 通用任务</title>
 <style>body{{background:#f1f5f9;color:#19283e;font:16px/1.6 system-ui;margin:0}}main{{max-width:1050px;margin:35px auto;padding:28px;background:white;border-radius:18px}}pre{{white-space:pre-wrap;overflow-wrap:anywhere;background:#f5f7fa;padding:16px;max-height:320px;overflow:auto}}li{{margin-bottom:24px}}a{{color:#2853c9}}</style>
 <main><h1>{escape(summary["goal"])}</h1><p>任务状态：{escape(summary["status"])} · 执行引擎：{escape(summary["engine"])}</p>
+<p>{escape("续跑自任务 " + summary["resumed_from"] + "；旧会话的验收结论不计入本次。" if summary["resumed_from"] else "")}</p>
 <p>验收标准来源：{escape(summary["checks_origin"])}。完成表示记录中的具体验收已通过，不代表任意业务的完整正确性。</p>
 <p>{escape(summary.get("error") or "")}</p><h2>实际工具调用与观察</h2><ol>{steps}</ol>
 <h2>最后一轮验收</h2><ol>{checks}</ol><a href="summary.json">完整结果</a> · <a href="checks.json">验收定义</a> · <a href="manifest.json">证据摘要</a>
@@ -155,14 +182,23 @@ def report_agent(directory: Path, summary: dict) -> Path:
 
 def run_agent(
     store: Store,
-    goal: str,
+    goal: str | None,
     policy: ToolPolicy,
     output: Path,
     *,
     recipe: dict | None = None,
     checks: list | None = None,
     max_steps: int = 20,
+    resume: str | None = None,
 ) -> dict:
+    engine = "recipe" if recipe is not None else "llm"
+    if resume and recipe is not None:
+        raise ValueError("Recipes replay from their first step; only model-driven tasks resume")
+    session = (
+        load_session(store, resume, engine, policy.workspace, goal, checks) if resume else None
+    )
+    if session:
+        goal = session["goal"]
     task_id = store.create(goal)
     usage_before = usage_snapshot()
     directory = output.resolve() / task_id
@@ -170,8 +206,9 @@ def run_agent(
     summary = {
         "task_id": task_id,
         "goal": goal,
-        "engine": "recipe" if recipe is not None else "llm",
+        "engine": engine,
         "workspace": str(policy.workspace.resolve()),
+        "resumed_from": resume,
         "status": "active",
         "error": None,
         "steps": [],
@@ -182,16 +219,27 @@ def run_agent(
     changed = False
     rejections = 0
     try:
-        store.transition(task_id, "active", {"engine": summary["engine"], "goal": goal})
+        store.transition(
+            task_id, "active", {"engine": engine, "goal": goal, "workspace": summary["workspace"]}
+        )
         if type(max_steps) is not int or not 1 <= max_steps <= 50:
             raise ValueError("max_steps must be 1..50")
         tools = Tools(policy, directory / "tools")
         summary["capabilities"] = tools.catalog()
         if checks is None and recipe is not None:
             checks = recipe.get("checks")
+        origin = "provided"
+        if session and session["checks"] is not None:
+            checks, origin = session["checks"], session["checks_origin"]
         if checks is not None:
             accepted = validate_checks(checks, tools)
-            summary["checks_origin"] = "provided"
+            summary["checks_origin"] = origin
+            store.record_event(task_id, "checks.accepted", {"origin": origin, "checks": accepted})
+        resumed = (
+            {"previous_session": resume_context(store, task_id, session, RECENT_STEPS)}
+            if session
+            else {}
+        )
         actions = []
         if recipe is not None:
             actions = recipe.get("steps")
@@ -211,9 +259,10 @@ def run_agent(
                             "goal": goal,
                             "capabilities": tools.catalog(),
                             "acceptance_checks": accepted,
-                            "recent_steps": context_view(summary["steps"][-6:]),
+                            "recent_steps": context_view(summary["steps"][-RECENT_STEPS:]),
                             "last_verification": context_view(summary["verification"]),
                             "remaining_steps": max_steps - index,
+                            **resumed,
                         },
                     )
                     summary["model"] = model
@@ -246,6 +295,9 @@ def run_agent(
                     except ValueError as error:
                         raise ActionRejected(str(error)) from None
                     summary["checks_origin"] = "model-proposed"
+                    store.record_event(
+                        task_id, "checks.accepted", {"origin": "model-proposed", "checks": accepted}
+                    )
                     step["observation"] = {"accepted_checks": len(accepted)}
                 elif action == "finish":
                     if not accepted:
@@ -299,7 +351,9 @@ def run_agent(
     except Exception as error:
         summary.update(status="blocked", error=f"{type(error).__name__}: {error}")
     store.transition(
-        task_id, summary["status"], {"verification_passed": summary["status"] == "completed"}
+        task_id,
+        summary["status"],
+        {"verification_passed": summary["status"] == "completed", "error": summary["error"]},
     )
     summary["usage"] = usage_since(usage_before)
     summary["events"] = store.events(task_id)

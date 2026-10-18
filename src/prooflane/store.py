@@ -60,6 +60,13 @@ class Store:
                 dict(row) for row in db.execute("SELECT * FROM tasks ORDER BY created_at, rowid")
             ]
 
+    def task(self, task_id: str) -> dict:
+        with self.connect() as db:
+            row = db.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        if row is None:
+            raise ValueError("Unknown task")
+        return dict(row)
+
     def attach(self, task_id: str, uri: str, description: str) -> str:
         if not uri.strip():
             raise ValueError("Evidence URI cannot be empty")
