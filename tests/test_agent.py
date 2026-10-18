@@ -155,6 +155,75 @@ class AgentTests(unittest.TestCase):
                         result["verification"][0]["errors"], ["Assertion failed at ['content']"]
                     )
 
+    def test_blocked_decision_completes_only_when_real_acceptance_passes(self):
+        expected_content = "def double(value):\n    return value * 2\n"
+        checks = [
+            {
+                "tool": "files.read",
+                "arguments": {"path": "program.py"},
+                "assertions": [{"path": ["content"], "equals": expected_content}],
+            }
+        ]
+        for expression, reason, expected_status, verification_status in [
+            ("value * 2", "cannot continue", "completed", "passed"),
+            ("value + 2", "工作成果已完成", "blocked", "failed"),
+        ]:
+            with self.subTest(expression=expression):
+                decisions = [
+                    ({"action": "set_checks", "checks": checks}, "stub"),
+                    (
+                        {
+                            "action": "call",
+                            "tool": "files.write",
+                            "arguments": {
+                                "path": "program.py",
+                                "content": f"def double(value):\n    return {expression}\n",
+                            },
+                        },
+                        "stub",
+                    ),
+                    ({"action": "blocked", "reason": reason}, "stub"),
+                ]
+                with patch("prooflane.agent.request_json", side_effect=decisions) as model:
+                    result = self.run_goal(max_steps=3)
+                self.assertEqual(model.call_count, 3)
+                self.assertEqual(result["status"], expected_status, result)
+                self.assertFalse(result["budget_exhausted"])
+                self.assertEqual(result["steps"][1]["observation"]["status"], "succeeded")
+                self.assertEqual(
+                    [item["status"] for item in result["verification"]], [verification_status]
+                )
+                observation = result["verification"][0]["observation"]
+                self.assertEqual(observation["status"], "succeeded")
+                self.assertEqual(
+                    observation["data"]["content"], decisions[1][0]["arguments"]["content"]
+                )
+                if expected_status == "completed":
+                    self.assertIsNone(result["error"])
+                    self.assertEqual(result["steps"][-1]["action"], "blocked")
+                    self.assertEqual(
+                        result["steps"][-1]["observation"]["verification"], result["verification"]
+                    )
+                else:
+                    self.assertEqual(result["error"], f"RuntimeError: {reason}")
+                    self.assertEqual(
+                        result["verification"][0]["errors"], ["Assertion failed at ['content']"]
+                    )
+
+    def test_blocked_decision_without_acceptance_cannot_complete(self):
+        reason = "工作成果已完成"
+        with patch(
+            "prooflane.agent.request_json",
+            return_value=({"action": "blocked", "reason": reason}, "stub"),
+        ) as model:
+            result = self.run_goal()
+        self.assertEqual(model.call_count, 1)
+        self.assertEqual(result["status"], "blocked")
+        self.assertEqual(result["error"], f"RuntimeError: {reason}")
+        self.assertEqual(result["checks_origin"], "not-defined")
+        self.assertEqual(result["verification"], [])
+        self.assertFalse(result["budget_exhausted"])
+
     def test_acceptance_checks_cannot_be_replaced(self):
         decisions = [
             (
