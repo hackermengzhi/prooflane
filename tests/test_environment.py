@@ -41,11 +41,12 @@ class EnvironmentSnapshotTests(unittest.TestCase):
         self.assertIsNone(data["packages"]["definitely-not-installed-xyz"])
 
     def test_env_keys_filter_by_prefix_and_never_expose_values(self):
+        # A prefix unlikely to collide with any ambient variable (CI sets PROOFLANE_TEST_*).
         secret = "s3cr3t-value-should-not-leak"
-        injected = {"PROOFLANE_ONE": secret, "PROOFLANE_TWO": "x", "OTHER_VAR": "y"}
+        injected = {"ENVSNAPTEST_ONE": secret, "ENVSNAPTEST_TWO": "x", "OTHER_VAR": "y"}
         with patch.dict("os.environ", injected, clear=False):
-            data = self.snapshot(env_prefixes=["PROOFLANE_"])
-        self.assertEqual(data["env_keys"], ["PROOFLANE_ONE", "PROOFLANE_TWO"])
+            data = self.snapshot(env_prefixes=["ENVSNAPTEST_"])
+        self.assertEqual(data["env_keys"], ["ENVSNAPTEST_ONE", "ENVSNAPTEST_TWO"])
         self.assertNotIn(secret, repr(data))
 
     def test_git_fields_report_commit_and_dirty_in_a_repository(self):
