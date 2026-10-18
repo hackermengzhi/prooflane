@@ -15,24 +15,34 @@ from prooflane.models import ModelOutputError, request_json, usage_since, usage_
 from prooflane.store import Store
 from prooflane.tools import STATE_CHANGING_TOOLS, ToolPolicy, Tools
 
+# Read-only inspection every role may use to understand code and artifacts.
+READ_ONLY_TOOLS = {
+    "files.list",
+    "files.read",
+    "code.inspect",
+    "artifact.identify",
+    "artifact.strings",
+    "env.snapshot",
+}
+# Checks that run the suite, so only roles that already hold process.run get them.
+QUALITY_TOOLS = {"quality.mutate", "quality.flaky"}
+
 ROLE_TOOLS = {
-    "product": {"files.list", "files.read", "code.inspect"},
-    "developer": {
-        "files.list",
-        "files.read",
+    "product": READ_ONLY_TOOLS,
+    "developer": READ_ONLY_TOOLS
+    | QUALITY_TOOLS
+    | {
         "files.write",
         "files.edit",
-        "code.inspect",
         "process.run",
         "debug.capabilities",
         "debug.run",
     },
-    "tester": {
-        "files.list",
-        "files.read",
+    "tester": READ_ONLY_TOOLS
+    | QUALITY_TOOLS
+    | {
         "files.write",
         "files.edit",
-        "code.inspect",
         "process.run",
         "debug.capabilities",
         "debug.run",
