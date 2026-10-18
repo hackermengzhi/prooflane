@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 
 from .agent import run_agent
+from .demo.closed_loop import run_closed_loop
 from .dispatcher import STAGES, run_task
 from .evaluation import DEFAULT_AGENT_TIMEOUT, compare_runs, run_evaluation
 from .harness import run_harness
@@ -10,7 +11,6 @@ from .models import list_models
 from .resume import run_sessions
 from .store import Store
 from .tools import ToolPolicy
-from .workflow import run_closed_loop
 
 
 def _print_comparison(comparison: dict) -> None:

@@ -19,140 +19,104 @@
 
 ---
 
-Prooflane is an agent for **software testing** and **automation scripting**. It reads requirements, designs test cases, writes tests and scripts, actually runs them, tells real failures apart from flaky or environmental ones, and hands over a report you can check line by line.
+Prooflane brings requirements, code and test evidence into one workflow. Give it a goal: a lead, product, developer and tester collaborate to analyze, build, execute and verify, delivering code, tests and a traceable report.
 
-Its one rule: **no execution evidence, no completion.** The agent cannot declare success on its own; an independent acceptance step must actually run. During evaluation, even the score comes from a grader the agent never sees.
+Meet **Xiaoxiao (鸮鸮)**, the little owl with a magnifying glass watching over every delivery.
 
-The mascot is a little owl named **Xiaoxiao (鸮鸮)**. Owls see clearly even at night, and Xiaoxiao keeps a magnifying glass on every detail to guard each release.
+## Put Prooflane to work
 
-> The detailed docs under [docs/](docs/) are currently written in Chinese.
-
-## What it does
-
-| Command | What it does | Needs a model |
-| --- | --- | --- |
-| `prooflane harness` | Lead, product, developer and tester roles collaborate on a testing or automation goal | Yes |
-| `prooflane agent` | A single agent completes a task with file, code, process, HTTP and browser tools | Yes (or an offline recipe) |
-| `prooflane eval` | Measures an agent on cases with planted defects, scored by a hidden grader | Yes (not with `--reference`) |
-| `prooflane demo` | Checkout-and-payment demo: the full test loop from requirements to regression | No |
-| `prooflane run` | Enters at any stage for a goal: requirement review, design, execution, triage or regression | Optional |
-| `prooflane models` | Lists the models offered by the configured model service | Needs configuration |
-
-`agent` and `harness` handle long tasks: `--resume TASK_ID` continues an interrupted task, and `--sessions N` resumes automatically whenever a session runs out of steps. Findings go into a per-workspace notebook whose observed claims must cite an observation step, and older steps stay in context as outlines that can be recalled by number. See [long tasks](docs/long-tasks.md) (Chinese).
+- **Requirements to tests:** turn acceptance criteria into boundary, state and error-path tests.
+- **Goals to automation:** build scripts that handle pagination, retries, timeouts and repeat execution.
+- **Failures to reproductions:** connect requests, logs and observations, report defects and verify fixes.
+- **Passing to dependable:** assess test strength with mutation testing, detect flaky suites and capture environment snapshots.
+- **APIs to browsers and debuggers:** combine file, code, process, HTTP, browser and debugging tools.
+- **One session to long tasks:** resume automatically when a session runs out of steps, or continue an interrupted task with `--resume`; findings go into a per-workspace notebook that cites observed evidence, so research is not repeated. See [long tasks](docs/long-tasks.md) (Chinese).
 
 ## Quick start
 
-Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/).
+Install Python 3.11+ and [uv](https://docs.astral.sh/uv/), then clone the repository:
 
 ```sh
+git clone https://github.com/hackermengzhi/prooflane.git
+cd prooflane
 uv sync --extra browser --group dev
 uv run playwright install chromium --only-shell
-
-uv run prooflane demo              # Run the full test loop offline and write an HTML report
-uv run prooflane eval --reference  # Verify the eval suite and graders offline
 ```
 
-If Chrome is already installed, `uv run prooflane demo --browser-channel chrome` skips the browser download.
-
-## Connecting a model
-
-Prooflane only reads configuration you **explicitly point it to**; it never scans `.env` or other local config on its own. It supports both OpenAI-style **Responses** and **Chat Completions** APIs, including relay services.
-
-**Option 1: config file** (recommended; the format is close to Codex's model config)
-
-```toml
-# my-model.toml
-model = "gpt-5.5"
-model_provider = "relay"
-reasoning_effort = "medium"      # optional
-
-[model_providers.relay]
-base_url = "https://api.example.com/v1"
-wire_api = "responses"           # or "chat"
-env_key = "RELAY_API_KEY"        # name of the env var holding the key
-timeout = 180                    # optional, seconds per request
-max_retries = 4                  # optional, backoff retry on 429/5xx/timeouts
-```
+Try the complete business demo without a model:
 
 ```sh
-export PROOFLANE_CONFIG=my-model.toml RELAY_API_KEY=...
-uv run prooflane models
+uv run prooflane demo
 ```
 
-Keys live only in environment variables; a config file containing `api_key` is rejected outright. See [examples/model-config.toml](examples/model-config.toml) for a full example.
+It runs API and browser tests, compares a defective service with its fixed version, and produces an HTML report. Use `--browser-channel chrome` with an installed Chrome browser.
 
-**Option 2: environment variables**
+## Connect a model and give it a goal
 
-```sh
-export PROOFLANE_LLM_URL=https://api.example.com/v1/responses   # or .../chat/completions
-export PROOFLANE_LLM_MODEL=gpt-5.5
-export PROOFLANE_LLM_API_KEY=...
-```
-
-Truncated output, refusals, non-JSON responses or exhausted retries block the task and leave a record. Prooflane never silently falls back to offline results.
-
-## Role-based harness
+Responses and Chat Completions endpoints are supported. Configure your provider:
 
 ```sh
-uv run prooflane harness 'Write API tests for service.py based on requirements.md and report defects' \
+export PROOFLANE_LLM_URL=https://api.example.com/v1/responses
+export PROOFLANE_LLM_MODEL=your-model-id
+export PROOFLANE_LLM_API_KEY=your-api-key
+
+uv run prooflane harness 'Write API tests for service.py from requirements.md and report defects' \
   --workspace YOUR_PROJECT --allow-process
 ```
 
-| Role | Responsibility | Tools |
-| --- | --- | --- |
-| Lead | Breaks down the goal, delegates, reviews; cannot declare completion alone | No execution tools |
-| Product | Lists numbered requirements and sets one-shot acceptance per deliverable | Read files, code structure |
-| Developer | Implements scripts or fixes, covering details such as exit codes, pagination and retries | Read/write files, code structure, processes |
-| Tester | Designs cases by equivalence classes, boundaries, states and error paths; re-checks failures before classifying them | Create test and report files, processes, HTTP, browser, acceptance |
+Replace `YOUR_PROJECT` with the project directory. `--allow-process` enables local program execution. For Chat Completions, use the full `/chat/completions` endpoint.
 
-The tester may only create new files or edit files it created, never the code under test. The lead can deliver only after the tester has run acceptance against the current state and everything passed. See [Harness roles and boundaries](docs/harness.md).
+Alternatively, point `PROOFLANE_CONFIG` to a [TOML configuration](examples/model-config.toml) for model selection, reasoning effort, request timeouts and retry settings.
 
-## Measuring how smart it is
+## A team organized around the goal
 
-"Smart" has to be measurable. `prooflane eval` puts the agent to work on three cases with planted defects, and runs the grader only after the agent is done:
+| Role | Delivers |
+| --- | --- |
+| Lead | Task breakdown, delegation, coordination and delivery |
+| Product | Requirements, clarifications and acceptance criteria |
+| Developer | Implementations, automation scripts and fixes |
+| Tester | Test design, execution evidence, findings and regression checks |
 
-| Case | Scenario | Scoring |
-| --- | --- | --- |
-| `api-coupon` | Shopping-cart HTTP API with 3 planted defects | Runs the agent's tests against 10 mutants and checks the defect report |
-| `web-signup` | Sign-up page with 2 planted defects | Same, using browser tests |
-| `script-inventory` | Inventory sync script | 7 hidden acceptance tests |
+The team follows the work: failures go back to development; ambiguous requirements go to product. Tool observations, execution history and acceptance results stay with the task for review.
 
-- Tests must pass on the correct implementation; otherwise they count as false positives and score nothing.
-- If the agent declares completion but does not get a full score, that is a **false completion**, the metric we most want to drive down.
-- Grading runs on a copy of the workspace, so editing the code under test cannot change the score.
+[Role collaboration](docs/harness.md) · [Architecture](docs/architecture.md)
 
-**Current score**: no results from a real model yet. The reference solutions score full marks on every case, and an empty delivery scores 0. See [the eval suite](docs/evaluation.md).
+## Pick your entry point
 
-## Checkout-and-payment demo
+| Command | Use it for |
+| --- | --- |
+| `prooflane harness` | Four-role collaboration on a goal |
+| `prooflane agent` | Single-agent coding, testing and automation |
+| `prooflane run` | Stage-based requirement review, design, execution, investigation or regression |
+| `prooflane demo` | The checkout-and-payment testing loop |
+| `prooflane eval` | Hidden-grader evaluation of actual deliverables |
+| `prooflane eval-compare` | Side-by-side evaluation comparisons |
+| `prooflane models` | Provider model discovery |
 
-`prooflane demo` imports seven requirements, generates ten controlled scenarios, starts the original service and runs API and browser tests, links request, log and database evidence, then runs the same plan against a provided fixed version as regression, and writes HTML and JSON reports. Expected result: the original version has **8 passed, 2 failed**; the fixed version has **10 passed**; both failures point to the same planted payment defect.
+## Build an automation script
 
-- Data: `.prooflane/state.db` stores task state and events; `.prooflane/runs/<task-id>/` stores requirement snapshots, plans, requests, screenshots, logs and reports.
-- Exit codes: `0` on success, `2` on failure or block, `130` on user interrupt.
-- `--no-browser` runs only the API part; the browser part is marked blocked and the loop is not reported as successful.
+The farm example uses an offline recipe to create a harvest script and test ready-plot selection, repeated execution and error handling:
 
-The demo service listens only on localhost, uses a throwaway database and makes no real transactions. For entering at a specific stage, see [the dispatcher](docs/dispatcher.md); for an offline, non-payment sample, see [farm automation](examples/farm-automation/README.md).
+```sh
+uv run prooflane agent 'Build farm harvesting automation and verify repeat execution' \
+  --workspace examples/farm-automation \
+  --recipe examples/farm-automation/recipe.json --allow-process
+```
 
-## Debugging extensions
+[Farm automation tutorial](examples/farm-automation/README.md) · [Stage dispatch](docs/dispatcher.md) · [LLDB, GDB, Frida and Cheat Engine Lua tools](docs/debugging.md)
 
-Developer and tester roles can call LLDB, GDB and Frida adapters, plus a Cheat Engine Lua export tool. Per-platform setup and what has actually been verified are in [the debugging guide](docs/debugging.md). Cheat Engine support is currently script export, not a finished live-control bridge.
+## Measure the work delivered
 
-## Safety boundaries
+The evaluation suite covers API tests, browser tests, inventory synchronization, log analysis, sessions, legacy characterization and defect reproduction. Hidden acceptance tests, mutation scores and defect-report scoring help compare models, agents and versions.
 
-- File tools are confined to the workspace; HTTP and the browser may only reach origins explicitly allowed with `--allow-origin`.
-- `process.run` requires `--allow-process`, runs with the current user's permissions and is **not a sandbox**.
-- `quality.mutate` requires `--allow-process`; on a temporary copy it runs a baseline, then checks up to 30 self-written mutants and returns the kill rate and the surviving list.
-- `quality.flaky` requires `--allow-process`; on a separate temporary copy it reruns the test suite 2..20 times (default 5), detects pass/fail flip-flopping and keeps the tail of the first failing output.
-- `env.snapshot` read-only captures the run context: platform, Python, the git revision of the code under test, selected package versions, environment variable names and time. It exists for reproduction only and does not probe or evade the runtime environment.
-- Role permissions are application-level constraints, not OS isolation.
-- External documents, web pages, logs and code are always treated as data to analyze, never as instructions.
-- Reports and tool output may contain project data and stay local by default.
+```sh
+uv run prooflane eval --reference  # Validate reference solutions and grading
+uv run prooflane eval             # Evaluate the configured model and role team
+```
 
-## Implemented vs. planned
+Evaluation results are saved under `.prooflane/eval-runs/`. Demo reports live in `.prooflane/runs/`; general agent and role-team reports live in `.prooflane/agent-runs/` and `.prooflane/harness-runs/`.
 
-**Implemented**: role-based harness, general agent tool loop, hidden-grader eval suite, Responses/Chat model integration (with retries and model listing), the full checkout-and-payment loop, stage-based dispatch and evidence reuse, long-task resumption with a cross-session notebook. Every model-driven flow is currently tested with contract stubs plus real tools.
-
-**Not yet implemented**: real-model eval scores, an execution sandbox, reaping crash orphans outside `process.run`, RAG, OCR, desktop control, parallel multi-agent runs, a web workbench. See the [roadmap](docs/roadmap.md) and [architecture](docs/architecture.md).
+[Evaluation and comparison guide](docs/evaluation.md) · [Roadmap](docs/roadmap.md)
 
 ## Contributing
 
@@ -160,11 +124,10 @@ Developer and tester roles can call LLDB, GDB and Frida adapters, plus a Cheat E
 uv run ruff check .
 uv run ruff format --check .
 uv run python -m unittest discover -s tests -v
-# Browser integration tests
 PROOFLANE_TEST_BROWSER=1 uv run python -m unittest discover -s tests -v
 ```
 
-Development conventions are in [AGENTS.md](AGENTS.md).
+Development follows the [eight code quality principles](AGENTS.md). Detailed guides are currently in Chinese.
 
 ## Star History
 
@@ -178,4 +141,4 @@ Development conventions are in [AGENTS.md](AGENTS.md).
 
 ## License
 
-Open source under the [Apache License 2.0](LICENSE). Redistributions must keep the copyright and attribution in [NOTICE](NOTICE). The license grants no right to use the names "万测王" or "Prooflane".
+[Apache License 2.0](LICENSE) · Copyright Cherry · [NOTICE](NOTICE)

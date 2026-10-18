@@ -15,10 +15,10 @@ class StoreTests(unittest.TestCase):
                 store.transition(task, "completed", {})
             self.assertEqual(store.tasks()[0]["status"], "pending")
             self.assertEqual(store.events(task), [])
-            store.transition(task, "planning", {})
+            store.transition(task, "active", {})
             store.transition(task, "cancelled", {})
             with self.assertRaises(ValueError):
-                store.transition(task, "running", {})
+                store.transition(task, "active", {})
             self.assertEqual(store.tasks()[0]["status"], "cancelled")
 
     def test_task_and_evidence_survive_reopen(self):
