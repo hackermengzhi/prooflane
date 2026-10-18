@@ -80,7 +80,8 @@ COMMON_GUIDE = (
 
 ROLE_GUIDES = {
     "leader": (
-        "Leader actions: delegate(role: product/developer/tester, task:string), finish, blocked. "
+        "You may only use these actions: delegate(role: product/developer/tester, task:string), "
+        "finish, blocked; do not use any other actions or call tools directly. "
         "Plan the work from the goal, then hand each specialist one concrete task with the files, "
         "requirement ids and evidence it needs. Testing goals: product fixes acceptance, tester "
         "designs, writes and runs the tests, triages failures and records confirmed defects. "
@@ -90,7 +91,8 @@ ROLE_GUIDES = {
         "Watch remaining_steps: every delegation and report costs a step."
     ),
     "product": (
-        "Product actions: call(tool,arguments), set_checks(checks:list), report(message), blocked. "
+        "You may only use these actions: call(tool,arguments), set_checks(checks:list), "
+        "report(message), blocked; do not use any other actions. "
         "Read the requirements, list every numbered requirement and any ambiguity, then define "
         "acceptance once, before implementation. Checks contain tool, arguments and "
         "assertions:[{path:[keys],equals:value or contains:value}]; for compound conditions use "
@@ -101,14 +103,16 @@ ROLE_GUIDES = {
         "system under test to pass. Report the requirement list and the checks to the leader."
     ),
     "developer": (
-        "Developer actions: call(tool,arguments), report(message), blocked. Inspect before editing "
+        "You may only use these actions: call(tool,arguments), report(message), blocked; "
+        "do not use any other actions. Inspect before editing "
         "and use files.edit for focused changes and files.write for new files or full rewrites. Prefer the Python standard library. Implement every "
         "numbered requirement exactly: exit codes, output formats, ordering, pagination, retries, "
         "idempotency keys, timeouts and error paths. Run your code before reporting. Report what "
         "changed and what you ran, with real results."
     ),
     "tester": (
-        "Tester actions: call(tool,arguments), verify, report(message), blocked. You may create new "
+        "You may only use these actions: call(tool,arguments), verify, report(message), blocked; "
+        "do not use any other actions. You may create new "
         "test and report files and edit files you created, never other files. Design tests per "
         "numbered requirement: valid and invalid partitions, boundaries (min-1, min, max, max+1), "
         "exact status codes and bodies, state left unchanged after a rejection, repeated and "

@@ -3,12 +3,31 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from prooflane.harness import RoleTools, run_harness
+from prooflane.harness import ROLE_GUIDES, RoleTools, run_harness
 from prooflane.store import Store
 from prooflane.tools import ToolPolicy
 
 
 class HarnessTests(unittest.TestCase):
+    def test_role_guides_explicitly_limit_allowed_actions(self):
+        allowed_actions = {
+            "leader": ("delegate", "finish", "blocked"),
+            "product": ("call", "set_checks", "report", "blocked"),
+            "developer": ("call", "report", "blocked"),
+            "tester": ("call", "verify", "report", "blocked"),
+        }
+        all_actions = {action for actions in allowed_actions.values() for action in actions}
+        for role, actions in allowed_actions.items():
+            with self.subTest(role=role):
+                guide = ROLE_GUIDES[role]
+                action_list = guide.split(";", 1)[0]
+                self.assertIn("You may only use these actions:", action_list)
+                self.assertIn("do not use any other actions", guide)
+                for action in actions:
+                    self.assertIn(action, action_list)
+                for action in all_actions.difference(actions):
+                    self.assertNotIn(action, action_list)
+
     def test_leader_delegates_implementation_and_independent_tester_verifies(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
