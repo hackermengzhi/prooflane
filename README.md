@@ -126,6 +126,7 @@ uv run prooflane harness '根据 requirements.md 为 service.py 编写接口测�
 - `process.run` 需要 `--allow-process`，以当前用户权限运行，**不是沙箱**。
 - `quality.mutate` 需要 `--allow-process`，在临时副本上先跑基线，再检查最多 30 个自拟变异体，返回杀死率与存活列表。
 - `quality.flaky` 需要 `--allow-process`，在独立临时副本上重复运行测试套件 2..20 次（默认 5 次），识别通过/失败摇摆并保留首次失败输出尾部。
+- `env.snapshot` 只读采集运行现场：平台、Python、被测代码的 git 版本、指定包版本、环境变量键名与时间；仅供复现，不探测或规避运行环境。
 - 角色权限是应用层约束，不是操作系统隔离。
 - 外部文档、网页、日志、代码一律当作待分析的数据，不当作指令。
 - 报告和工具输出可能包含项目数据，默认只保存在本地。

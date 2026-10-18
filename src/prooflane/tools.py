@@ -15,6 +15,7 @@ from urllib.request import Request, build_opener
 
 from prooflane.artifacts import digest, write_json
 from prooflane.debugging import capabilities, run_debugger
+from prooflane.environment import snapshot
 from prooflane.flaky import check_flaky
 from prooflane.models import NoRedirect
 from prooflane.reverse import identify_artifact, inspect_strings
@@ -77,6 +78,7 @@ class Tools:
             "files.write": self.write_file,
             "files.edit": self.edit_file,
             "code.inspect": self.inspect_code,
+            "env.snapshot": self.env_snapshot,
             "artifact.identify": self.identify_artifact,
             "artifact.strings": self.inspect_strings,
             "process.run": self.run_process,
@@ -118,6 +120,12 @@ class Tools:
             },
             "code.inspect": {
                 "arguments": {"path": "Python file; returns AST symbols/imports/syntax"}
+            },
+            "env.snapshot": {
+                "arguments": {
+                    "packages": "optional list of distribution names to resolve to versions",
+                    "env_prefixes": "optional list; keep only variable NAMES with these prefixes",
+                }
             },
             "artifact.identify": {
                 "arguments": {
@@ -287,6 +295,19 @@ class Tools:
             "imports": sorted(set(imports)),
             "sha256": source["sha256"],
         }
+
+    def env_snapshot(
+        self,
+        directory: Path,
+        packages: list[str] | None = None,
+        env_prefixes: list[str] | None = None,
+    ) -> dict:
+        for name, value in (("packages", packages), ("env_prefixes", env_prefixes)):
+            if value is not None and (
+                not isinstance(value, list) or not all(isinstance(item, str) for item in value)
+            ):
+                raise ValueError(f"{name} must be a list of strings")
+        return snapshot(self.workspace, packages or [], env_prefixes)
 
     def identify_artifact(self, directory: Path, path: str) -> dict:
         return identify_artifact(self.path(path), MAX_FILE_BYTES)
