@@ -4,12 +4,13 @@ import shutil
 from pathlib import Path
 
 from prooflane.artifacts import digest, manifest, write_json
+from prooflane.demo.sources import compare_sources
 from prooflane.planning import fixture_plan, model_plan, request_json, validate_fixture_contract
 from prooflane.reporting import write_report
 from prooflane.requirements import import_requirements
 from prooflane.reuse import import_prior, verify_run
 from prooflane.store import Store
-from prooflane.workflow import compare_sources, run_phase
+from prooflane.workflow import run_phase
 
 STAGES = {
     "review": {"needs": [], "purpose": "审查需求，记录来源和待澄清项"},
