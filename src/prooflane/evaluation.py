@@ -15,6 +15,7 @@ from prooflane.agent import run_agent
 from prooflane.artifacts import write_json
 from prooflane.harness import run_harness
 from prooflane.models import usage_snapshot
+from prooflane.resume import run_sessions
 from prooflane.store import Store
 from prooflane.tools import ToolPolicy
 from prooflane.trials import COPY_IGNORE, OUTPUT_TAIL, mutate, run_trial
@@ -257,6 +258,7 @@ def run_case(
     reference: bool,
     agent_argv: list[str] | None = None,
     agent_timeout: float = DEFAULT_AGENT_TIMEOUT,
+    sessions: int = 1,
 ) -> dict:
     case = json.loads((case_dir / "case.json").read_text(encoding="utf-8"))
     case_output = output / case_dir.name
@@ -271,8 +273,15 @@ def run_case(
         if mode == "external":
             run = run_external(case["goal"], policy, case_output, agent_argv, agent_timeout)
         else:
-            run = RUNNERS[mode](
-                store, case["goal"], policy, case_output / "runs", max_steps=case["max_steps"]
+            # Splitting one case budget across sessions measures what each resumption loses.
+            run = run_sessions(
+                RUNNERS[mode],
+                sessions,
+                store,
+                case["goal"],
+                policy,
+                case_output / "runs",
+                max_steps=math.ceil(case["max_steps"] / sessions),
             )
     grade = GRADERS[case["grading"]["kind"]](case_dir, case["grading"], workspace)
     result = {
@@ -280,7 +289,8 @@ def run_case(
         "battleground": case["battleground"],
         "status": run["status"],
         "error": run["error"],
-        "steps": len(run["steps"]),
+        "steps": run.get("total_steps", len(run["steps"])),
+        "sessions": len(run.get("sessions", [])),
         "usage": run.get("usage"),
         "seconds": round(time.monotonic() - started, 1),
         "report": run["report"],
@@ -304,7 +314,10 @@ def run_evaluation(
     reference: bool = False,
     agent_command: str | None = None,
     agent_timeout: float = DEFAULT_AGENT_TIMEOUT,
+    sessions: int = 1,
 ) -> dict:
+    if mode == "external" and sessions != 1:
+        raise ValueError("External agents manage their own sessions; use --sessions 1")
     agent_argv = None
     if mode == "external":
         agent_argv = shlex.split(agent_command or "")
@@ -328,11 +341,13 @@ def run_evaluation(
             reference=reference,
             agent_argv=agent_argv,
             agent_timeout=agent_timeout,
+            sessions=sessions,
         )
         for case_dir in case_dirs
     ]
     summary = {
         "mode": "reference" if reference else mode,
+        "sessions": sessions,
         "directory": str(directory),
         "mean_score": sum(item["score"] for item in results) / len(results),
         "false_completions": sum(item["false_completion"] for item in results),

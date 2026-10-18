@@ -38,6 +38,8 @@ The mascot is a little owl named **Xiaoxiao (鸮鸮)**. Owls see clearly even at
 | `prooflane run` | Enters at any stage for a goal: requirement review, design, execution, triage or regression | Optional |
 | `prooflane models` | Lists the models offered by the configured model service | Needs configuration |
 
+`agent` and `harness` handle long tasks: `--resume TASK_ID` continues an interrupted task, and `--sessions N` resumes automatically whenever a session runs out of steps. Findings go into a per-workspace notebook whose observed claims must cite an observation step, and older steps stay in context as outlines that can be recalled by number. See [long tasks](docs/long-tasks.md) (Chinese).
+
 ## Quick start
 
 Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/).
@@ -148,9 +150,9 @@ Developer and tester roles can call LLDB, GDB and Frida adapters, plus a Cheat E
 
 ## Implemented vs. planned
 
-**Implemented**: role-based harness, general agent tool loop, hidden-grader eval suite, Responses/Chat model integration (with retries and model listing), the full checkout-and-payment loop, stage-based dispatch and evidence reuse. Every model-driven flow is currently tested with contract stubs plus real tools.
+**Implemented**: role-based harness, general agent tool loop, hidden-grader eval suite, Responses/Chat model integration (with retries and model listing), the full checkout-and-payment loop, stage-based dispatch and evidence reuse, long-task resumption with a cross-session notebook. Every model-driven flow is currently tested with contract stubs plus real tools.
 
-**Not yet implemented**: real-model eval scores, an execution sandbox, crash resume, RAG, OCR, desktop control, parallel multi-agent runs, a web workbench. See the [roadmap](docs/roadmap.md) and [architecture](docs/architecture.md).
+**Not yet implemented**: real-model eval scores, an execution sandbox, reaping orphaned processes after a crash, RAG, OCR, desktop control, parallel multi-agent runs, a web workbench. See the [roadmap](docs/roadmap.md) and [architecture](docs/architecture.md).
 
 ## Contributing
 

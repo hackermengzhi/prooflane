@@ -43,6 +43,15 @@ class ToolPolicy:
     browser_channel: str | None = None
 
 
+def workspace_path(workspace: Path, relative: str) -> Path:
+    if not isinstance(relative, str) or Path(relative).is_absolute():
+        raise ValueError("Use a workspace-relative path")
+    path = (workspace / relative).resolve()
+    if not path.is_relative_to(workspace):
+        raise ValueError("Path escapes the configured workspace")
+    return path
+
+
 def check_timeout(timeout: int) -> None:
     if type(timeout) is not int or not 1 <= timeout <= MAX_PROCESS_SECONDS:
         raise ValueError(f"Process timeout must be 1..{MAX_PROCESS_SECONDS} seconds")
@@ -87,6 +96,12 @@ class Tools:
             "http.request": self.http_request,
             "browser.run": self.run_browser,
         }
+        self.session_catalog = {}
+
+    def add(self, capabilities) -> None:
+        """Register session capabilities, such as shared notes, beside the workspace tools."""
+        self.handlers.update(capabilities.handlers)
+        self.session_catalog.update(capabilities.catalog)
 
     def debug_capabilities(self, directory: Path) -> dict:
         return capabilities()
@@ -95,7 +110,7 @@ class Tools:
         return run_debugger(self, directory, **arguments)
 
     def catalog(self) -> dict:
-        return {
+        workspace_catalog = {
             "debug.capabilities": {"arguments": {}},
             "debug.run": {
                 "enabled": self.policy.allow_process,
@@ -179,14 +194,10 @@ class Tools:
                 },
             },
         }
+        return {**workspace_catalog, **self.session_catalog}
 
     def path(self, relative: str) -> Path:
-        if not isinstance(relative, str) or Path(relative).is_absolute():
-            raise ValueError("Use a workspace-relative path")
-        path = (self.workspace / relative).resolve()
-        if not path.is_relative_to(self.workspace):
-            raise ValueError("Path escapes the configured workspace")
-        return path
+        return workspace_path(self.workspace, relative)
 
     def check_url(self, url: str) -> None:
         if origin(url) not in self.origins:

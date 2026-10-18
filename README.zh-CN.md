@@ -36,6 +36,8 @@
 | `prooflane run` | 按目标从需求审查、设计、执行、排查、回归任一阶段切入 | 可选 |
 | `prooflane models` | 列出已配置模型服务提供的模型 | 需要配置 |
 
+`agent` 与 `harness` 支持长任务：`--resume TASK_ID` 续跑中断的任务，`--sessions N` 在步数用完时自动续跑；发现写进按工作区共享、必须引用观察步骤的笔记账本，旧观察以大纲保留、可按编号取回。详见 [长任务说明](docs/long-tasks.md)。
+
 ## 快速开始
 
 需要 Python 3.11+ 和 [uv](https://docs.astral.sh/uv/)。
@@ -146,9 +148,9 @@ uv run prooflane harness '根据 requirements.md 为 service.py 编写接口测�
 
 ## 已实现与规划
 
-**已实现**：角色协作 harness、通用 Agent 工具循环、隐藏评分评测集、Responses/Chat 双接口模型接入（含重试和模型列表）、下单支付完整闭环、按阶段调度和证据复用。所有涉及模型的流程目前都用契约桩配合真实工具做过测试。
+**已实现**：角色协作 harness、通用 Agent 工具循环、隐藏评分评测集、Responses/Chat 双接口模型接入（含重试和模型列表）、下单支付完整闭环、按阶段调度和证据复用、长任务续跑与跨会话笔记账本。所有涉及模型的流程目前都用契约桩配合真实工具做过测试。
 
-**尚未实现**：真实模型的评测成绩、执行沙箱、崩溃续跑、RAG、OCR、桌面控制、多 Agent 并行、Web 工作台。路线图见 [docs/roadmap.md](docs/roadmap.md)，架构见 [docs/architecture.md](docs/architecture.md)。
+**尚未实现**：真实模型的评测成绩、执行沙箱、崩溃后的孤儿进程回收、RAG、OCR、桌面控制、多 Agent 并行、Web 工作台。路线图见 [docs/roadmap.md](docs/roadmap.md)，架构见 [docs/architecture.md](docs/architecture.md)。
 
 ## 参与开发
 

@@ -5,8 +5,18 @@ import json
 from pathlib import Path
 
 from prooflane.artifacts import manifest, write_json
+from prooflane.memory import (
+    MEMORY_GUIDE,
+    MEMORY_TOOLS,
+    Notes,
+    context_view,
+    fingerprint,
+    history_view,
+    recent_view,
+    workspace_changes,
+)
 from prooflane.models import ModelOutputError, request_json, usage_since, usage_snapshot
-from prooflane.resume import load_session
+from prooflane.resume import load_session, owner
 from prooflane.store import Store
 from prooflane.tools import FILE_CHANGING_TOOLS, STATE_CHANGING_TOOLS, ToolPolicy, Tools
 
@@ -30,11 +40,11 @@ SYSTEM_PROMPT = (
     "acceptance checks; failed checks are observations to investigate and repair. Never invent results. "
     "You can work on API tests, browser automation, local scripts, repository analysis and other domains. "
     "Use screenshot artifacts and DOM observations where available; do not claim OCR or desktop input tools. "
+    + MEMORY_GUIDE
+    + " "
     + RESUME_GUIDE
 )
 
-# Large enough for a typical source file or test log, small enough to bound repeated context.
-CONTEXT_TEXT_LIMIT = 10_000
 # A model gets this many consecutive chances to correct malformed or disallowed decisions.
 MAX_CONSECUTIVE_REJECTIONS = 3
 # Steps of history the model sees each turn, including those inherited by a resumed session.
@@ -59,34 +69,28 @@ def reject(step: dict, error: Exception, rejections: int) -> dict:
     }
 
 
-def context_view(value):
-    """Keep full observations on disk and bounded excerpts in the model context."""
-    if isinstance(value, str):
-        return (
-            value
-            if len(value) <= CONTEXT_TEXT_LIMIT
-            else value[:CONTEXT_TEXT_LIMIT]
-            + "\n[truncated; inspect evidence or read targeted file]"
-        )
-    if isinstance(value, list):
-        return [context_view(item) for item in value[:20]]
-    if isinstance(value, dict):
-        return {key: context_view(item) for key, item in list(value.items())[:40]}
-    return value
-
-
-def resume_context(store: Store, task_id: str, session: dict, window: int, **inherited) -> dict:
+def resume_context(
+    store: Store, task_id: str, session: dict, window: int, workspace: Path, **inherited
+) -> dict:
     """Record what a resumed session inherits and return the bounded view the model receives."""
     previous = {
         "task_id": session["task_id"],
         "error": session["error"],
+        "history": history_view(session["steps"], window, numbered=False),
         "recent_steps": context_view(session["steps"][-window:]),
+        # Unknown (None) when the earlier session crashed before recording its final snapshot.
+        "workspace_changes": workspace_changes(session["snapshot"], fingerprint(workspace)),
         **inherited,
     }
     store.record_event(
         task_id,
         "session.resumed",
-        {"resumed_from": session["task_id"], "prior_steps": previous["recent_steps"], **inherited},
+        {
+            "resumed_from": session["task_id"],
+            "prior_steps": previous["recent_steps"],
+            "workspace_changes": previous["workspace_changes"],
+            **inherited,
+        },
     )
     return previous
 
@@ -98,7 +102,7 @@ def validate_checks(checks: list, tools: Tools) -> list:
         if (
             not isinstance(check, dict)
             or check.get("tool") not in tools.handlers
-            or check["tool"] in FILE_CHANGING_TOOLS
+            or check["tool"] in FILE_CHANGING_TOOLS | MEMORY_TOOLS
         ):
             raise ValueError("Acceptance checks require a registered observation capability")
         if not isinstance(check.get("arguments"), dict):
@@ -211,6 +215,7 @@ def run_agent(
         "resumed_from": resume,
         "status": "active",
         "error": None,
+        "budget_exhausted": False,
         "steps": [],
         "verification": [],
         "checks_origin": "not-defined",
@@ -220,11 +225,15 @@ def run_agent(
     rejections = 0
     try:
         store.transition(
-            task_id, "active", {"engine": engine, "goal": goal, "workspace": summary["workspace"]}
+            task_id,
+            "active",
+            {"engine": engine, "goal": goal, "workspace": summary["workspace"], "owner": owner()},
         )
         if type(max_steps) is not int or not 1 <= max_steps <= 50:
             raise ValueError("max_steps must be 1..50")
         tools = Tools(policy, directory / "tools")
+        notes = Notes(store, task_id, policy.workspace, summary["steps"])
+        tools.add(notes)
         summary["capabilities"] = tools.catalog()
         if checks is None and recipe is not None:
             checks = recipe.get("checks")
@@ -236,7 +245,11 @@ def run_agent(
             summary["checks_origin"] = origin
             store.record_event(task_id, "checks.accepted", {"origin": origin, "checks": accepted})
         resumed = (
-            {"previous_session": resume_context(store, task_id, session, RECENT_STEPS)}
+            {
+                "previous_session": resume_context(
+                    store, task_id, session, RECENT_STEPS, policy.workspace
+                )
+            }
             if session
             else {}
         )
@@ -259,7 +272,9 @@ def run_agent(
                             "goal": goal,
                             "capabilities": tools.catalog(),
                             "acceptance_checks": accepted,
-                            "recent_steps": context_view(summary["steps"][-RECENT_STEPS:]),
+                            "history": history_view(summary["steps"], RECENT_STEPS),
+                            "recent_steps": recent_view(summary["steps"], RECENT_STEPS),
+                            "memory": notes.memory(),
                             "last_verification": context_view(summary["verification"]),
                             "remaining_steps": max_steps - index,
                             **resumed,
@@ -285,8 +300,10 @@ def run_agent(
                     observation = tools.call(tool, decision.get("arguments"))
                     step.update(tool=tool, observation=observation)
                     changed = changed or tool in FILE_CHANGING_TOOLS
-                    # Every action invalidates the previous verification verdict.
-                    summary["verification"] = []
+                    # Every workspace action invalidates the previous verification verdict;
+                    # notes and recall leave the workspace untouched.
+                    if tool not in MEMORY_TOOLS:
+                        summary["verification"] = []
                 elif action == "set_checks":
                     if accepted is not None or changed:
                         raise ActionRejected("Acceptance checks are immutable once established")
@@ -344,12 +361,17 @@ def run_agent(
                 break
         else:
             summary.update(
-                status="blocked", error="Agent reached its step budget without verified completion"
+                status="blocked",
+                error="Agent reached its step budget without verified completion",
+                budget_exhausted=True,
             )
     except KeyboardInterrupt:
         summary.update(status="cancelled", error="Execution cancelled by user")
     except Exception as error:
         summary.update(status="blocked", error=f"{type(error).__name__}: {error}")
+    store.record_event(
+        task_id, "workspace.snapshot", {"files": fingerprint(policy.workspace.resolve())}
+    )
     store.transition(
         task_id,
         summary["status"],

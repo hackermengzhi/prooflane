@@ -26,6 +26,17 @@ class Store:
                     description TEXT NOT NULL,
                     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
+                CREATE TABLE IF NOT EXISTS notes (
+                    id TEXT PRIMARY KEY,
+                    workspace TEXT NOT NULL,
+                    task_id TEXT NOT NULL REFERENCES tasks(id),
+                    kind TEXT NOT NULL,
+                    statement TEXT NOT NULL,
+                    evidence TEXT NOT NULL,
+                    files TEXT NOT NULL,
+                    superseded_by TEXT REFERENCES notes(id),
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
                 CREATE TABLE IF NOT EXISTS events (
                     sequence INTEGER PRIMARY KEY AUTOINCREMENT,
                     task_id TEXT NOT NULL REFERENCES tasks(id),
@@ -109,6 +120,52 @@ class Store:
                     "SELECT * FROM events WHERE task_id = ? ORDER BY sequence", (task_id,)
                 )
             ]
+
+    def record_note(self, task_id: str, workspace: str, note: dict, replaces: str | None) -> str:
+        """Add a workspace note, superseding the active note it replaces in the same write."""
+        note_id = str(uuid4())
+        with self.connect() as connection:
+            if replaces is not None:
+                replaced = connection.execute(
+                    "SELECT superseded_by FROM notes WHERE id = ? AND workspace = ?",
+                    (replaces, workspace),
+                ).fetchone()
+                if replaced is None or replaced["superseded_by"] is not None:
+                    raise ValueError("Only an active note of this workspace can be replaced")
+            connection.execute(
+                "INSERT INTO notes(id, workspace, task_id, kind, statement, evidence, files) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    note_id,
+                    workspace,
+                    task_id,
+                    note["kind"],
+                    note["statement"],
+                    json.dumps(note["evidence"], ensure_ascii=False),
+                    json.dumps(note["files"]),
+                ),
+            )
+            if replaces is not None:
+                connection.execute(
+                    "UPDATE notes SET superseded_by = ? WHERE id = ?", (note_id, replaces)
+                )
+        return note_id
+
+    def notes(self, workspace: str) -> list[dict]:
+        """Active notes of a workspace, oldest first."""
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM notes WHERE workspace = ? AND superseded_by IS NULL ORDER BY rowid",
+                (workspace,),
+            ).fetchall()
+        return [
+            {
+                **dict(row),
+                "evidence": json.loads(row["evidence"]),
+                "files": json.loads(row["files"]),
+            }
+            for row in rows
+        ]
 
     def record_event(self, task_id: str, stage: str, detail: dict) -> None:
         with self.connect() as connection:
