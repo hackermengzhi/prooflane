@@ -15,7 +15,7 @@ REASONING_EFFORTS = {"none", "minimal", "low", "medium", "high", "xhigh", "max"}
 # Reasoning models can spend minutes on one decision over a large task context.
 DEFAULT_TIMEOUT = 180
 DEFAULT_MAX_RETRIES = 4
-RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+RETRYABLE_STATUS = {429, 500, 502, 503, 504, 520, 522, 524}
 MAX_BACKOFF_SECONDS = 60
 MAX_RESPONSE_BYTES = 1024 * 1024
 
