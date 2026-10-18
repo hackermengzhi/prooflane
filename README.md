@@ -30,6 +30,7 @@ Meet **Xiaoxiao (鸮鸮)**, the little owl with a magnifying glass watching over
 - **Failures to reproductions:** connect requests, logs and observations, report defects and verify fixes.
 - **Passing to dependable:** assess test strength with mutation testing, detect flaky suites and capture environment snapshots.
 - **APIs to browsers and debuggers:** combine file, code, process, HTTP, browser and debugging tools.
+- **One session to long tasks:** resume automatically when a session runs out of steps, or continue an interrupted task with `--resume`; findings go into a per-workspace notebook that cites observed evidence, so research is not repeated. See [long tasks](docs/long-tasks.md) (Chinese).
 
 ## Quick start
 

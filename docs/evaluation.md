@@ -63,6 +63,14 @@ uv run prooflane eval-compare .prooflane/compare/harness/*/evaluation.json .proo
 
 `eval-compare` 至少接收两个结果路径。默认表格按用例名排序、以 Agent 为列，分数保留三位小数，缺失用例显示 `-`，末行显示各次评测原有的均值。标签优先使用 `agent_command`，否则使用 `mode`，重名追加序号。`--json` 输出完整结构：`labels` 为标签列表，`cases` 中每项的 `runs` 按标签保存 `score` 与 `false_completion`（缺失时均为 `null`），`summary` 按标签保存原有的 `mean_score`、`false_completions` 和 `case_count`，`per_case_best` 按用例名列出所有并列最高分标签。缺失用例不参与最高分比较。对比只读取结果，不重新评分或检查评分器是否相同；用例集合不同时，均值仍来自各次评测自己的用例集合，不能直接据此排名。
 
+## 长任务续跑损失
+
+`--sessions K` 把每例步数预算平均拆成 K 个会话，步数用完自动续跑（见 [长任务说明](long-tasks.md)）。结果的 `steps` 为各会话总步数，`sessions` 为实际会话数。与 `--sessions 1` 在同一批用例上比较得分和虚假完成数，即可衡量续跑是否丢失进度。外部 Agent 自行管理会话，不支持此选项。
+
+```sh
+uv run prooflane eval --mode harness --sessions 3
+```
+
 ## 当前限制
 
 - 用例数量少，适合发现明显短板和比较改动前后的差异，不足以支撑统计意义上的能力结论。

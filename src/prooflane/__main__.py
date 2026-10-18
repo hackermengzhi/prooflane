@@ -8,6 +8,7 @@ from .dispatcher import STAGES, run_task
 from .evaluation import DEFAULT_AGENT_TIMEOUT, compare_runs, run_evaluation
 from .harness import run_harness
 from .models import list_models
+from .resume import run_sessions
 from .store import Store
 from .tools import ToolPolicy
 
@@ -65,7 +66,8 @@ def main() -> int:
     run.add_argument("--no-browser", action="store_true")
     run.add_argument("--browser-channel", choices=["chrome", "msedge"])
     agent = commands.add_parser("agent", help="General testing, coding and automation work")
-    agent.add_argument("goal")
+    agent.add_argument("goal", nargs="?", help="Omit when resuming; the task keeps its goal")
+    agent.add_argument("--resume", metavar="TASK_ID", help="Continue a blocked or cancelled task")
     agent.add_argument("--workspace", type=Path, required=True)
     agent.add_argument(
         "--recipe", type=Path, help="Optional reproducible tool-action recipe; otherwise uses LLM"
@@ -78,16 +80,29 @@ def main() -> int:
         "--allow-origin", action="append", default=[], help="HTTP/browser origin; repeat as needed"
     )
     agent.add_argument("--browser-channel", choices=["chrome", "msedge"])
-    agent.add_argument("--max-steps", type=int, default=20)
+    agent.add_argument("--max-steps", type=int, default=20, help="Step budget per session")
+    agent.add_argument(
+        "--sessions",
+        type=int,
+        default=1,
+        help="Resume automatically while a session runs out of steps",
+    )
     agent.add_argument("--output", type=Path, default=Path(".prooflane/agent-runs"))
     harness = commands.add_parser("harness", help="Leader/product/developer/tester organization")
-    harness.add_argument("goal")
+    harness.add_argument("goal", nargs="?", help="Omit when resuming; the task keeps its goal")
+    harness.add_argument("--resume", metavar="TASK_ID", help="Continue a blocked or cancelled task")
     harness.add_argument("--workspace", type=Path, required=True)
     harness.add_argument("--checks", type=Path)
     harness.add_argument("--allow-process", action="store_true")
     harness.add_argument("--allow-origin", action="append", default=[])
     harness.add_argument("--browser-channel", choices=["chrome", "msedge"])
-    harness.add_argument("--max-steps", type=int, default=30)
+    harness.add_argument("--max-steps", type=int, default=30, help="Step budget per session")
+    harness.add_argument(
+        "--sessions",
+        type=int,
+        default=1,
+        help="Resume automatically while a session runs out of steps",
+    )
     harness.add_argument("--output", type=Path, default=Path(".prooflane/harness-runs"))
     evaluation = commands.add_parser(
         "eval", help="Score agents on seeded cases with hidden graders"
@@ -111,6 +126,9 @@ def main() -> int:
     comparison = commands.add_parser("eval-compare", help="Compare saved evaluation results")
     comparison.add_argument("runs", type=Path, nargs="+", help="Two or more evaluation.json paths")
     comparison.add_argument("--json", action="store_true", help="Print structured comparison JSON")
+    evaluation.add_argument(
+        "--sessions", type=int, default=1, help="Split each case's step budget across sessions"
+    )
     args = parser.parse_args()
     if args.command == "eval-compare":
         if len(args.runs) < 2:
@@ -127,6 +145,10 @@ def main() -> int:
         return 0
     if args.command == "eval" and args.mode == "external" and not args.agent_command:
         parser.error("--mode external requires --agent-command")
+    if args.command in {"agent", "harness"} and args.goal is None and args.resume is None:
+        parser.error(f"{args.command} requires a goal or --resume TASK_ID")
+    if args.command == "agent" and args.recipe and args.sessions != 1:
+        parser.error("Recipes run in a single session")
     store = Store(args.db)
     if args.command == "init":
         print(json.dumps({"database": args.db}))
@@ -148,9 +170,13 @@ def main() -> int:
             reference=args.reference,
             agent_command=args.agent_command,
             agent_timeout=args.agent_timeout,
+            sessions=args.sessions,
         )
         rows = [
-            {key: case[key] for key in ["case", "status", "score", "false_completion", "steps"]}
+            {
+                key: case[key]
+                for key in ["case", "status", "score", "false_completion", "steps", "sessions"]
+            }
             for case in summary["cases"]
         ]
         print(
@@ -167,39 +193,59 @@ def main() -> int:
             )
         )
     elif args.command == "harness":
-        result = run_harness(
-            store,
-            args.goal,
-            ToolPolicy(
-                args.workspace, args.allow_process, tuple(args.allow_origin), args.browser_channel
-            ),
-            args.output,
-            checks=json.loads(args.checks.read_text()) if args.checks else None,
-            max_steps=args.max_steps,
-        )
+        try:
+            result = run_sessions(
+                run_harness,
+                args.sessions,
+                store,
+                args.goal,
+                ToolPolicy(
+                    args.workspace,
+                    args.allow_process,
+                    tuple(args.allow_origin),
+                    args.browser_channel,
+                ),
+                args.output,
+                checks=json.loads(args.checks.read_text()) if args.checks else None,
+                max_steps=args.max_steps,
+                resume=args.resume,
+            )
+        except ValueError as error:
+            # Raised before a task exists, for input such as an unresumable task.
+            parser.error(str(error))
         print(
             json.dumps(
-                {key: result[key] for key in ["task_id", "status", "report", "error"]},
+                {key: result[key] for key in ["task_id", "status", "sessions", "report", "error"]},
                 ensure_ascii=False,
                 indent=2,
             )
         )
         return 0 if result["status"] == "completed" else 2
     elif args.command == "agent":
-        result = run_agent(
-            store,
-            args.goal,
-            ToolPolicy(
-                args.workspace, args.allow_process, tuple(args.allow_origin), args.browser_channel
-            ),
-            args.output,
-            recipe=json.loads(args.recipe.read_text()) if args.recipe else None,
-            checks=json.loads(args.checks.read_text()) if args.checks else None,
-            max_steps=args.max_steps,
-        )
+        try:
+            result = run_sessions(
+                run_agent,
+                args.sessions,
+                store,
+                args.goal,
+                ToolPolicy(
+                    args.workspace,
+                    args.allow_process,
+                    tuple(args.allow_origin),
+                    args.browser_channel,
+                ),
+                args.output,
+                recipe=json.loads(args.recipe.read_text()) if args.recipe else None,
+                checks=json.loads(args.checks.read_text()) if args.checks else None,
+                max_steps=args.max_steps,
+                resume=args.resume,
+            )
+        except ValueError as error:
+            # Raised before a task exists, for input such as an unresumable task.
+            parser.error(str(error))
         print(
             json.dumps(
-                {key: result[key] for key in ["task_id", "status", "report", "error"]},
+                {key: result[key] for key in ["task_id", "status", "sessions", "report", "error"]},
                 ensure_ascii=False,
                 indent=2,
             )

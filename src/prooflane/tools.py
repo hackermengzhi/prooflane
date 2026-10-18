@@ -18,6 +18,7 @@ from prooflane.debugging import capabilities, run_debugger
 from prooflane.environment import snapshot
 from prooflane.flaky import check_flaky
 from prooflane.models import NoRedirect
+from prooflane.orphans import record_group
 from prooflane.reverse import identify_artifact, inspect_strings
 from prooflane.selfcheck import check_mutations
 
@@ -41,6 +42,15 @@ class ToolPolicy:
     allow_process: bool = False
     allowed_origins: tuple[str, ...] = ()
     browser_channel: str | None = None
+
+
+def workspace_path(workspace: Path, relative: str) -> Path:
+    if not isinstance(relative, str) or Path(relative).is_absolute():
+        raise ValueError("Use a workspace-relative path")
+    path = (workspace / relative).resolve()
+    if not path.is_relative_to(workspace):
+        raise ValueError("Path escapes the configured workspace")
+    return path
 
 
 def check_timeout(timeout: int) -> None:
@@ -87,6 +97,12 @@ class Tools:
             "http.request": self.http_request,
             "browser.run": self.run_browser,
         }
+        self.session_catalog = {}
+
+    def add(self, capabilities) -> None:
+        """Register session capabilities, such as shared notes, beside the workspace tools."""
+        self.handlers.update(capabilities.handlers)
+        self.session_catalog.update(capabilities.catalog)
 
     def debug_capabilities(self, directory: Path) -> dict:
         return capabilities()
@@ -95,7 +111,7 @@ class Tools:
         return run_debugger(self, directory, **arguments)
 
     def catalog(self) -> dict:
-        return {
+        workspace_catalog = {
             "debug.capabilities": {"arguments": {}},
             "debug.run": {
                 "enabled": self.policy.allow_process,
@@ -179,14 +195,10 @@ class Tools:
                 },
             },
         }
+        return {**workspace_catalog, **self.session_catalog}
 
     def path(self, relative: str) -> Path:
-        if not isinstance(relative, str) or Path(relative).is_absolute():
-            raise ValueError("Use a workspace-relative path")
-        path = (self.workspace / relative).resolve()
-        if not path.is_relative_to(self.workspace):
-            raise ValueError("Path escapes the configured workspace")
-        return path
+        return workspace_path(self.workspace, relative)
 
     def check_url(self, url: str) -> None:
         if origin(url) not in self.origins:
@@ -340,7 +352,10 @@ class Tools:
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
             )
+            group = None
             try:
+                # If this session is killed, finally never runs; a resume uses the record instead.
+                group = record_group(directory, process.pid, argv)
                 deadline = time.monotonic() + timeout
                 while process.poll() is None:
                     if time.monotonic() >= deadline:
@@ -357,6 +372,8 @@ class Tools:
                 except ProcessLookupError:
                     pass
                 process.wait(timeout=3)
+                if group:
+                    group.unlink()
         with output.open("rb") as stream:
             captured = stream.read(MAX_OUTPUT_BYTES)
         if output.stat().st_size > MAX_OUTPUT_BYTES:
