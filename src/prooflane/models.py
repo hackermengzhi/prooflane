@@ -212,6 +212,46 @@ def send(settings: ModelSettings, url: str, body: dict | None = None) -> dict:
         time.sleep(backoff_seconds(attempt, retry_error))
 
 
+def extract_json_object(text: str) -> dict:
+    """Parse the model's reply as JSON, tolerating a code fence or surrounding prose.
+
+    Some models wrap the object in a ```json fence or add a sentence before it, so a
+    bare json.loads would reject an otherwise valid decision. Fall back to the first
+    balanced {...} span, ignoring braces inside strings.
+    """
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    depth = 0
+    start = None
+    in_string = False
+    escaped = False
+    for index, character in enumerate(text):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == '"':
+                in_string = False
+            continue
+        if character == '"':
+            in_string = True
+        elif character == "{":
+            if depth == 0:
+                start = index
+            depth += 1
+        elif character == "}" and depth:
+            depth -= 1
+            if depth == 0 and start is not None:
+                try:
+                    return json.loads(text[start : index + 1])
+                except json.JSONDecodeError:
+                    start = None
+    raise json.JSONDecodeError("No JSON object found in model reply", text, 0)
+
+
 def request_json(system_prompt: str, payload: dict) -> tuple[dict, str]:
     settings = load_settings()
     body = request_body(settings, system_prompt, json.dumps(payload, ensure_ascii=False))
@@ -223,7 +263,7 @@ def request_json(system_prompt: str, payload: dict) -> tuple[dict, str]:
         USAGE[name] += value if type(value) is int else 0
     try:
         text = responses_text(result) if settings.wire_api == "responses" else chat_text(result)
-        plan = json.loads(text)
+        plan = extract_json_object(text)
     except (KeyError, IndexError, TypeError, json.JSONDecodeError) as error:
         raise ModelOutputError("Model returned an invalid JSON response") from error
     if not isinstance(plan, dict):

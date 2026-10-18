@@ -116,6 +116,29 @@ class ModelTransportTests(unittest.TestCase):
             with self.subTest(result=result), self.assertRaises(ValueError):
                 self.call(self.environment(), [reply(result)])
 
+    def test_fenced_or_prefixed_json_is_recovered(self):
+        for text in [
+            '```json\n{"action": "finish"}\n```',
+            'Here is the decision:\n{"action": "finish"}',
+            '{"action": "finish"}\nThat completes the task.',
+            '{"action": "finish", "reason": "a } inside a string"}',
+        ]:
+            with self.subTest(text=text):
+                result = {
+                    "status": "completed",
+                    "output": [message({"type": "output_text", "text": text})],
+                }
+                (decision, _), _ = self.call(self.environment(), [reply(result)])
+                self.assertEqual(decision["action"], "finish")
+
+    def test_text_without_any_json_object_is_rejected(self):
+        result = {
+            "status": "completed",
+            "output": [message({"type": "output_text", "text": "no json here"})],
+        }
+        with self.assertRaises(ValueError):
+            self.call(self.environment(), [reply(result)])
+
     def test_config_file_selects_provider_key_and_reasoning_effort(self):
         (decision, model), sent = self.call(self.configured(), [reply(COMPLETED)])
         self.assertEqual(model, "gpt-test")
