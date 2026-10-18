@@ -2,8 +2,6 @@
   <img src="docs/assets/mascot.svg" width="200" alt="万测王吉祥物：举着放大镜的小猫头鹰鸮鸮">
 </p>
 
-<p align="center"><a href="README.md">English</a> · <strong>中文</strong></p>
-
 <h1 align="center">万测王 · Prooflane</h1>
 
 <p align="center"><strong>会写测试、会写脚本，而且每句结论都拿得出证据的 Agent。</strong></p>
