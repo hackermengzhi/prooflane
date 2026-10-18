@@ -160,6 +160,13 @@ class ModelTransportTests(unittest.TestCase):
         self.assertEqual(decision, {"action": "finish"})
         self.assertEqual((len(sent), self.sleeps), (3, [7, 4]))
 
+    def test_cloudflare_origin_timeout_is_retried(self):
+        # 524 (and other Cloudflare origin-side codes) are transient, not fatal.
+        responses = [http_error(524), reply(COMPLETED)]
+        (decision, _), sent = self.call(self.environment(), responses)
+        self.assertEqual(decision, {"action": "finish"})
+        self.assertEqual(len(sent), 2)
+
     def test_retries_stop_at_budget_and_skip_client_errors(self):
         with self.assertRaisesRegex(RuntimeError, "HTTP 503"):
             self.call(self.configured(), [http_error(503)] * 3)
