@@ -72,13 +72,11 @@ class Store:
         return evidence_id
 
     def transition(self, task_id: str, status: str, detail: dict) -> None:
+        # A task is pending until it starts, active while it runs, then terminal.
+        # Stages within a run are recorded as events, not as task statuses.
         transitions = {
-            "pending": {"planning", "active", "blocked", "cancelled"},
+            "pending": {"active", "blocked", "cancelled"},
             "active": {"completed", "failed", "blocked", "cancelled"},
-            "planning": {"running", "blocked", "cancelled"},
-            "running": {"investigating", "blocked", "cancelled"},
-            "investigating": {"regressing", "blocked", "cancelled"},
-            "regressing": {"completed", "failed", "blocked", "cancelled"},
         }
         with self.connect() as connection:
             task = connection.execute(
