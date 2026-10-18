@@ -92,6 +92,69 @@ class AgentTests(unittest.TestCase):
         )
         self.assertIn("value * 2", (self.workspace / "program.py").read_text())
 
+    def test_completion_guidance_prompts_finish_and_requires_real_verification(self):
+        expected_content = "def double(value):\n    return value * 2\n"
+        checks = [
+            {
+                "tool": "files.read",
+                "arguments": {"path": "program.py"},
+                "assertions": [{"path": ["content"], "equals": expected_content}],
+            }
+        ]
+        for expression, expected_status, verification_status in [
+            ("value * 2", "completed", "passed"),
+            ("value + 2", "blocked", "failed"),
+        ]:
+            with self.subTest(expression=expression):
+                decisions = [
+                    {"action": "set_checks", "checks": checks},
+                    {
+                        "action": "call",
+                        "tool": "files.write",
+                        "arguments": {
+                            "path": "program.py",
+                            "content": f"def double(value):\n    return {expression}\n",
+                        },
+                    },
+                ]
+                payloads = []
+
+                def model_stub(prompt, payload):
+                    payloads.append(payload)
+                    if len(payloads) <= len(decisions):
+                        return decisions[len(payloads) - 1], "stub"
+                    if payload["recent_steps"][-1].get("completion_guidance"):
+                        return {"action": "finish", "reason": "act on completion guidance"}, "stub"
+                    return {"action": "blocked", "reason": "no completion guidance"}, "stub"
+
+                with patch("prooflane.agent.request_json", side_effect=model_stub):
+                    result = self.run_goal(max_steps=3)
+                self.assertEqual(result["status"], expected_status, result)
+                self.assertEqual(len(payloads), 3)
+                self.assertEqual(payloads[0]["acceptance_checks"], None)
+                self.assertIn("completion_guidance", payloads[1]["recent_steps"][-1])
+                last_step = payloads[2]["recent_steps"][-1]
+                self.assertEqual(last_step["observation"]["status"], "succeeded")
+                self.assertIn('{"action": "finish"}', last_step["completion_guidance"])
+                self.assertIn("immediately", last_step["completion_guidance"])
+                self.assertEqual(payloads[2]["last_verification"], [])
+                self.assertEqual(
+                    [step["action"] for step in result["steps"]],
+                    ["set_checks", "call", "finish"],
+                )
+                self.assertEqual(
+                    [item["status"] for item in result["verification"]], [verification_status]
+                )
+                observation = result["verification"][0]["observation"]
+                self.assertEqual(observation["status"], "succeeded")
+                self.assertEqual(
+                    observation["data"]["content"], decisions[1]["arguments"]["content"]
+                )
+                if verification_status == "failed":
+                    self.assertEqual(
+                        result["verification"][0]["errors"], ["Assertion failed at ['content']"]
+                    )
+
     def test_acceptance_checks_cannot_be_replaced(self):
         decisions = [
             (
@@ -183,6 +246,18 @@ class AgentTests(unittest.TestCase):
             result = self.run_goal(max_steps=1)
         self.assertEqual(result["status"], "blocked")
         self.assertIn("step budget", result["error"])
+
+    def test_completion_guidance_does_not_finish_without_model_decision(self):
+        with patch(
+            "prooflane.agent.request_json",
+            return_value=({"action": "call", "tool": "files.list", "arguments": {}}, "stub"),
+        ):
+            result = self.run_goal(checks=[process_check(["$PYTHON", "-c", "pass"])], max_steps=2)
+        self.assertEqual(result["status"], "blocked")
+        self.assertTrue(result["budget_exhausted"])
+        self.assertEqual(result["verification"], [])
+        self.assertEqual([step["action"] for step in result["steps"]], ["call", "call"])
+        self.assertIn("completion_guidance", result["steps"][-1])
 
     def test_model_missing_configuration_does_not_invoke_a_recipe(self):
         with patch.dict(os.environ, {}, clear=True):

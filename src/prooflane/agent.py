@@ -345,6 +345,19 @@ def run_agent(
                 store.record_event(task_id, "agent.rejected", step)
                 continue
             rejections = 0
+            if (
+                recipe is None
+                and accepted
+                and (
+                    action == "set_checks"
+                    or (action == "call" and step["observation"]["status"] == "succeeded")
+                )
+            ):
+                step["completion_guidance"] = (
+                    "Acceptance checks are defined and ready to run. If you believe the goal "
+                    'is met, return {"action": "finish"} immediately. A finish request runs '
+                    "the checks; completion requires all checks to pass."
+                )
             summary["steps"].append(step)
             store.record_event(task_id, "agent.step", step)
             write_json(directory / "session.json", summary)
